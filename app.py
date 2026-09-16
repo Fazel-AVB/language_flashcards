@@ -15,12 +15,19 @@ import sys
 import streamlit as st
 
 from flashcards import config
-from flashcards.models import Card
-from flashcards.session import ORDERS, build_deck, pick_direction
+from flashcards.models import CONFIDENCE_MAX, Card, blend_confidence, format_confidence
+from flashcards.session import ORDERS, build_deck, pick_direction, pick_next_repeat
 from flashcards.workbook import WorkbookError, load_cards
 from flashcards.writeback import WritebackError, apply_confidence_updates
 
 st.set_page_config(page_title="German Flashcards", page_icon="\U0001F1E9\U0001F1EA", layout="centered")
+
+ORDER_LABELS = {
+    "weighted": "Weighted (weakest likeliest)",
+    "lowest_confidence_first": "Lowest confidence first",
+    "random": "Random",
+    "oldest_first": "Oldest first",
+}
 
 GRADE_LABELS = {
     1: "1 - needs work",
@@ -105,8 +112,8 @@ def _reference_sidebar() -> str | None:
 # Session state
 # --------------------------------------------------------------------------- #
 
-_DECK_KEYS = ("queue", "current", "revealed", "changes", "graded_ids",
-              "deck_ids", "seed", "repeat", "direction")
+_DECK_KEYS = ("first_pass", "pending", "draw", "current", "revealed", "changes",
+              "graded_ids", "deck_ids", "seed", "repeat", "direction")
 
 
 def _reset_session() -> None:
@@ -138,6 +145,17 @@ def _cards_by_id() -> dict[str, Card]:
     return {c.id: c for c in st.session_state["wb"].cards}
 
 
+def _effective_confidence(card: Card) -> float | None:
+    """The card's score as of right now: the pending session value if it has
+    already been graded this session, else what the workbook holds.
+
+    Grades are averaged (models.blend_confidence), so a re-drill must compound on
+    the session's own result -- averaging against the on-disk value every time
+    would make repeated drilling of one word a no-op.
+    """
+    return st.session_state["changes"].get(card.id, card.confidence)
+
+
 # --------------------------------------------------------------------------- #
 # Stages
 # --------------------------------------------------------------------------- #
@@ -165,8 +183,10 @@ def _stage_setup(prefs: dict) -> None:
         order = st.selectbox(
             "Order",
             ORDERS,
-            index=ORDERS.index(prefs["order"]),
-            format_func=lambda o: o.replace("_", " "),
+            # Fall back to the first entry rather than raising: a config.json
+            # written by an older version can name an order that no longer exists.
+            index=ORDERS.index(prefs["order"]) if prefs["order"] in ORDERS else 0,
+            format_func=lambda o: ORDER_LABELS.get(o, o.replace("_", " ")),
         )
     with col2:
         direction = st.selectbox(
@@ -176,6 +196,13 @@ def _stage_setup(prefs: dict) -> None:
             format_func={"mixed": "Mixed (random)", "de_en": "German \u2192 English",
                          "en_de": "English \u2192 German"}.get,
         )
+    size = int(st.number_input(
+        "Words per session (unique)",
+        min_value=1, max_value=500, step=5,
+        value=int(prefs["session_size"]),
+        help="The deck is drawn from everything in scope. With the weighted order, "
+             "a word at 1 is 81x likelier to be drawn than one at 5.",
+    ))
     repeat = st.checkbox(
         "Keep repeating cards graded below 5 until the deck is clear",
         value=prefs["repeat_until_mastered"],
@@ -194,27 +221,34 @@ def _stage_setup(prefs: dict) -> None:
         ]
         st.dataframe(rows, hide_index=True, use_container_width=True)
 
-    preview = build_deck(
+    # Unlimited: this is the pool the session draws from, not the deck itself.
+    in_scope = build_deck(
         wb.cards, mode=mode, topics=topics, difficult_threshold=threshold, order=order, seed=0
     )
-    st.caption(f"{len(preview)} card(s) in scope.")
+    drawn = min(size, len(in_scope))
+    note = "" if len(in_scope) <= size else f"  Drawing {drawn} of them."
+    st.caption(f"{len(in_scope)} card(s) in scope.{note}")
 
-    if st.button("Start review", type="primary", disabled=not preview):
+    if st.button("Start review", type="primary", disabled=not in_scope):
         config.update_prefs(
             direction=direction, order=order, difficult_threshold=threshold,
-            repeat_until_mastered=repeat,
+            repeat_until_mastered=repeat, session_size=size,
         )
         seed = st.session_state.get("_run_seed", 0) + 1
         st.session_state["_run_seed"] = seed
         deck = build_deck(
             wb.cards, mode=mode, topics=topics, difficult_threshold=threshold,
-            order=order, seed=seed,
+            order=order, seed=seed, limit=size,
         )
         st.session_state.update(
             stage="review",
             seed=seed,
             deck_ids=[c.id for c in deck],
-            queue=[c.id for c in deck],
+            # first_pass: every drawn word is shown exactly once, in deck order.
+            # pending: words still below 5, re-drilled afterwards by live weight.
+            first_pass=[c.id for c in deck],
+            pending=[],
+            draw=0,
             current=deck[0].id,
             revealed=False,
             changes={},
@@ -263,7 +297,7 @@ def _stage_review() -> None:
     done_n = len(st.session_state["graded_ids"])
     st.progress(done_n / deck_n if deck_n else 0.0,
                text=f"{done_n} / {deck_n} words graded")
-    pending_repeats = len(st.session_state["queue"]) - 1
+    pending_repeats = len([i for i in st.session_state["pending"] if i != cid])
     tag = "DE \u2192 EN" if direction == "de_en" else "EN \u2192 DE"
     st.caption(f"{card.topic}  \u00b7  {tag}" + (f"  \u00b7  {pending_repeats} repeat(s) queued" if pending_repeats > 0 else ""))
 
@@ -271,8 +305,8 @@ def _stage_review() -> None:
     st.markdown(f"# {front}")
     if hint:
         st.markdown(f"*{hint}*")
-    old = card.confidence
-    st.caption(f"current confidence: {old if old is not None else 'ungraded'}")
+    old = _effective_confidence(card)
+    st.caption(f"current confidence: {format_confidence(old)}")
 
     st.divider()
 
@@ -284,9 +318,17 @@ def _stage_review() -> None:
         _render_back(card)
         st.divider()
         st.write("Set the new confidence:")
+        st.caption(
+            f"Your grade is averaged with the current score ({format_confidence(old)}), "
+            "not substituted for it."
+        )
         cols = st.columns(5)
         for grade, col in zip(range(1, 6), cols):
-            if col.button(GRADE_LABELS[grade], key=f"grade_{grade}", use_container_width=True):
+            # Show the averaged outcome up front: with blending, pressing "5" on a
+            # weak word does not set 5, which is otherwise a nasty surprise.
+            preview = format_confidence(blend_confidence(old, grade))
+            if col.button(GRADE_LABELS[grade], key=f"grade_{grade}",
+                          help=f"new score: {preview}", use_container_width=True):
                 _grade_current(grade)
                 st.rerun()
 
@@ -303,25 +345,58 @@ def _stage_review() -> None:
 def _grade_current(grade: int) -> None:
     cid = st.session_state["current"]
     card = _cards_by_id()[cid]
+    new = blend_confidence(_effective_confidence(card), grade)
     # Record only real changes so the summary and write-back stay minimal.
-    if grade == card.confidence:
+    # Compare against the on-disk value: an average that lands back on it is not
+    # a change, even though the card was graded.
+    if new == card.confidence:
         st.session_state["changes"].pop(cid, None)
     else:
-        st.session_state["changes"][cid] = grade
+        st.session_state["changes"][cid] = new
     st.session_state["graded_ids"].add(cid)
-    _advance(repeat_current=st.session_state["repeat"] and grade < 5)
+    # Mastery is the *stored* score, not the button pressed: after averaging, one
+    # press of 5 on a weak word lands well below 5 and it should come round again.
+    _advance(repeat_current=st.session_state["repeat"] and new < CONFIDENCE_MAX)
 
 
 def _advance(*, repeat_current: bool) -> None:
-    queue: list[str] = st.session_state["queue"]
-    finished = queue.pop(0)
+    """Move to the next card: finish the first pass, then re-drill by live weight.
+
+    Two phases on purpose. Every drawn word is shown once (phase 1) before any
+    repeat, so capping the session at N words still means you *see* all N; only
+    then do repeats start, and those are re-weighted on each pass.
+    """
+    cid = st.session_state["current"]
+    first_pass: list[str] = st.session_state["first_pass"]
+    pending: list[str] = st.session_state["pending"]
+
+    if first_pass and first_pass[0] == cid:
+        first_pass.pop(0)
     if repeat_current:
-        queue.append(finished)  # re-drill later in the same session
+        if cid not in pending:
+            pending.append(cid)
+    elif cid in pending:
+        pending.remove(cid)  # reached 5 (or was skipped): done for this session
+
     st.session_state["revealed"] = False
-    if queue:
-        st.session_state["current"] = queue[0]
-    else:
-        st.session_state["stage"] = "summary"
+
+    if first_pass:
+        st.session_state["current"] = first_pass[0]
+        return
+
+    if pending:
+        # Re-weight on the session's current scores, not the on-disk ones: a word
+        # that just improved yields its turn to the words that did not.
+        draw = st.session_state["draw"] + 1
+        st.session_state["draw"] = draw
+        cards = _cards_by_id()
+        scores = {i: _effective_confidence(cards[i]) for i in pending}
+        nxt = pick_next_repeat(scores, exclude=cid, seed=st.session_state["seed"], draw=draw)
+        if nxt is not None:
+            st.session_state["current"] = nxt
+            return
+
+    st.session_state["stage"] = "summary"
 
 
 def _stage_summary(path: str) -> None:
@@ -340,7 +415,7 @@ def _stage_summary(path: str) -> None:
         return
 
     cards = _cards_by_id()
-    changes: dict[str, int] = st.session_state["changes"]
+    changes: dict[str, float] = st.session_state["changes"]
 
     if not changes:
         st.info("No confidence changes to save.")
@@ -352,8 +427,8 @@ def _stage_summary(path: str) -> None:
                 "Topic": c.topic,
                 "German": c.german,
                 "English": c.english,
-                "Old": c.confidence if c.confidence is not None else "\u2014",
-                "New": new,
+                "Old": format_confidence(c.confidence) if c.confidence is not None else "\u2014",
+                "New": format_confidence(new),
             })
         rows.sort(key=lambda r: (r["Topic"], r["German"]))
         st.dataframe(rows, hide_index=True, use_container_width=True)

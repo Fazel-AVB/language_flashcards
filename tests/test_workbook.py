@@ -58,8 +58,10 @@ def test_missing_file():
 
 @pytest.mark.parametrize(
     "raw,expected",
-    [(None, None), ("", None), ("  ", None), (3, 3), (3.0, 3), ("4", 4),
-     (0, 1), (7, 5), ("nope", None)],
+    [(None, None), ("", None), ("  ", None), (3, 3.0), (3.0, 3.0), ("4", 4.0),
+     (0, 1.0), (7, 5.0), ("nope", None),
+     # half-steps survive the round trip; off-grid values snap onto it
+     (3.5, 3.5), ("2.5", 2.5), (2.8, 3.0), (1.75, 2.0), (1.6, 1.5)],
 )
 def test_coerce_confidence(raw, expected):
     assert coerce_confidence(raw) == expected

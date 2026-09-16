@@ -28,7 +28,13 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 
-from .models import CONFIDENCE_COL, CONFIDENCE_MAX, CONFIDENCE_MIN
+from .models import (
+    CONFIDENCE_COL,
+    CONFIDENCE_MAX,
+    CONFIDENCE_MIN,
+    CONFIDENCE_STEP,
+    confidence_to_cell,
+)
 
 WORKBOOK_XML = "xl/workbook.xml"
 
@@ -47,14 +53,15 @@ class WriteResult:
 
 def apply_confidence_updates(
     path: str,
-    updates: dict[tuple[str, int], int],
+    updates: dict[tuple[str, int], float],
     *,
     original_mtime: float,
     backup_dir: str,
 ) -> WriteResult:
     """Write new confidence values.
 
-    `updates` maps (sheet_name, excel_row) -> new confidence (1..5). An empty
+    `updates` maps (sheet_name, excel_row) -> new confidence in [1, 5] on the
+    half-step grid (grades are averaged in, so 3.5 is a legal score). An empty
     dict is a no-op (no backup, no write).
     """
     if not updates:
@@ -63,6 +70,12 @@ def apply_confidence_updates(
     for (sheet, row), value in updates.items():
         if not (CONFIDENCE_MIN <= value <= CONFIDENCE_MAX):
             raise WritebackError(f"{sheet}!row {row}: confidence {value} out of range 1..5")
+        # Off-grid values mean a caller bypassed models.blend_confidence; refuse
+        # rather than write a 2.8125 that no part of the app can produce.
+        if abs(value / CONFIDENCE_STEP - round(value / CONFIDENCE_STEP)) > 1e-9:
+            raise WritebackError(
+                f"{sheet}!row {row}: confidence {value} is not a multiple of {CONFIDENCE_STEP}"
+            )
 
     if not os.path.isfile(path):
         raise WritebackError(f"File not found: {path}")
@@ -116,7 +129,7 @@ def apply_confidence_updates(
 # XML editing
 # --------------------------------------------------------------------------- #
 
-def _edit_cell_value(xml: str, row: int, col: str, value: int, sheet: str) -> str:
+def _edit_cell_value(xml: str, row: int, col: str, value: float, sheet: str) -> str:
     """Return `xml` with cell <col><row> set to the integer `value`.
 
     Handles: cell present with <v>, present but empty, self-closing, or absent
@@ -139,7 +152,7 @@ def _edit_cell_value(xml: str, row: int, col: str, value: int, sheet: str) -> st
             raise WritebackError(f"{sheet}!{ref} contains a formula; refusing to overwrite")
         # Drop any t="s"/t="str"/t="inlineStr": a numeric grade must not stay typed as text.
         attrs = re.sub(r'\s+t="[^"]*"', "", attrs)
-        new_cell = f'<c r="{ref}"{attrs}><v>{value}</v></c>'
+        new_cell = f'<c r="{ref}"{attrs}><v>{confidence_to_cell(value)}</v></c>'
         new_body = body[: cm.start()] + new_cell + body[cm.end():]
     else:
         new_body = _insert_cell(xml, body, ref, col, value)
@@ -147,11 +160,11 @@ def _edit_cell_value(xml: str, row: int, col: str, value: int, sheet: str) -> st
     return xml[: row_match.start()] + head + new_body + tail + xml[row_match.end():]
 
 
-def _insert_cell(full_xml: str, body: str, ref: str, col: str, value: int) -> str:
+def _insert_cell(full_xml: str, body: str, ref: str, col: str, value: float) -> str:
     """Insert a new <c> for `ref` at the correct column position within `body`."""
     style_match = re.search(rf'<c r="{col}\d+"[^>]*\bs="(\d+)"', full_xml)
     style = f' s="{style_match.group(1)}"' if style_match else ""
-    new_cell = f'<c r="{ref}"{style}><v>{value}</v></c>'
+    new_cell = f'<c r="{ref}"{style}><v>{confidence_to_cell(value)}</v></c>'
 
     target = _col_index(col)
     for cm in re.finditer(r'<c r="([A-Z]+)\d+"(?:[^>]*?)(?:/>|>.*?</c>)', body, re.DOTALL):

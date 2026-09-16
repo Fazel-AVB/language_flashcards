@@ -38,6 +38,29 @@ def test_updates_only_target_cells_and_backs_up(workbook_path, tmp_path):
     assert reloaded["Bericht"].confidence == 3  # untouched
 
 
+def test_half_values_round_trip(workbook_path, tmp_path):
+    """Averaged scores are half-steps; they must survive the zip/XML write."""
+    data = load_cards(str(workbook_path))
+    apply_confidence_updates(
+        str(workbook_path), {("School & Office", 2): 3.5, ("Verbs", 2): 4.0},
+        original_mtime=data.mtime, backup_dir=str(tmp_path),
+    )
+    reloaded = {c.german: c for c in load_cards(str(workbook_path)).cards}
+    assert reloaded["Stift"].confidence == 3.5
+    assert reloaded["werden"].confidence == 4.0
+    # A whole number is written bare, never as "4.0" (see models.confidence_to_cell)
+    assert "<v>4</v>" in _member(workbook_path, "xl/worksheets/sheet3.xml")
+
+
+def test_off_grid_value_rejected(workbook_path, tmp_path):
+    data = load_cards(str(workbook_path))
+    with pytest.raises(WritebackError, match="not a multiple"):
+        apply_confidence_updates(
+            str(workbook_path), {("Verbs", 2): 2.8125},
+            original_mtime=data.mtime, backup_dir=str(tmp_path),
+        )
+
+
 def test_dashboard_formula_is_preserved(workbook_path, tmp_path):
     data = load_cards(str(workbook_path))
     # Overview is sheet1.xml (created first).
@@ -93,6 +116,11 @@ def test_edit_cell_value_variants():
     # present with value
     assert '<v>4</v>' in _edit_cell_value(
         '<row r="2"><c r="L2" s="6"><v>1</v></c></row>', 2, "L", 4, "S")
+    # half value written as "3.5"; whole float written bare, not "4.0"
+    assert '<v>3.5</v>' in _edit_cell_value(
+        '<row r="2"><c r="L2" s="6"><v>1</v></c></row>', 2, "L", 3.5, "S")
+    assert '<v>4</v>' in _edit_cell_value(
+        '<row r="2"><c r="L2" s="6"><v>1</v></c></row>', 2, "L", 4.0, "S")
     # self-closing
     out = _edit_cell_value('<row r="2"><c r="L2" s="6"/></row>', 2, "L", 3, "S")
     assert '<c r="L2" s="6"><v>3</v></c>' in out

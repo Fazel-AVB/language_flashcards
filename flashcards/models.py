@@ -14,6 +14,7 @@ filtered/blank rows would shift it.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -43,6 +44,13 @@ NON_TOPIC_SHEETS = frozenset({"Overview", "Flashcards", "Card Pool"})
 CONFIDENCE_MIN = 1
 CONFIDENCE_MAX = 5
 
+# A grade is averaged into the stored score (see `blend_confidence`), so the
+# value is no longer an integer. Results are snapped to this grid rather than
+# kept as the raw quotient: repeated averaging otherwise walks off into quarters
+# and eighths (1.75, 2.8125, ...) -- meaningless precision on a self-assessed
+# 1-5 scale, and unreadable in the workbook.
+CONFIDENCE_STEP = 0.5
+
 
 @dataclass(frozen=True)
 class Card:
@@ -60,7 +68,7 @@ class Card:
     synonyms: str | None
     notes: str | None
     date_added: date | None
-    confidence: int | None
+    confidence: float | None   # half-steps; grades are averaged in, not substituted
 
     sheet: str          # source sheet name (== topic); explicit so write-back never guesses
     row: int            # 1-based Excel row of this word
@@ -87,19 +95,61 @@ def is_topic_header(header_row: list) -> bool:
     return bool(first) and first.lower() == "german" and "confidence" in (last or "").lower()
 
 
-def coerce_confidence(value) -> int | None:
-    """Normalise a raw cell to an int in [1, 5], or None if blank/unparseable.
+def _snap(value: float) -> float:
+    """Clamp to [1, 5] and round to the nearest CONFIDENCE_STEP.
+
+    Ties go up via floor(x + 0.5), NOT round(): round() is banker's rounding, so
+    it sends 3.25 down to 3.0 but 3.75 up to 4.0. That asymmetry surfaces as a
+    word that mysteriously refuses to improve, so do not "simplify" this back.
+    """
+    stepped = math.floor(value / CONFIDENCE_STEP + 0.5) * CONFIDENCE_STEP
+    return float(max(CONFIDENCE_MIN, min(CONFIDENCE_MAX, stepped)))
+
+
+def coerce_confidence(value) -> float | None:
+    """Normalise a raw cell to a float in [1, 5] on the half-step grid, or None.
 
     Out-of-range values are clamped rather than dropped: a stray 0 or 6 should
-    still round-trip to a usable grade instead of silently becoming None.
+    still round-trip to a usable grade instead of silently becoming None. A
+    hand-edited 2.8 is snapped onto the grid for the same reason.
     """
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
     try:
-        n = int(round(float(value)))
+        n = float(value)
     except (TypeError, ValueError):
         return None
-    return max(CONFIDENCE_MIN, min(CONFIDENCE_MAX, n))
+    return _snap(n)
+
+
+def blend_confidence(old: float | None, grade: int) -> float:
+    """Combine the stored confidence with a fresh grade: their mean.
+
+    A word's score is the average of what it was and how you just rated it, so
+    one bad day cannot erase a well-known word and one lucky guess cannot mark a
+    weak one as mastered. An ungraded word has nothing to average against, so its
+    first grade is taken as-is.
+    """
+    if not (CONFIDENCE_MIN <= grade <= CONFIDENCE_MAX):
+        raise ValueError(f"grade {grade} out of range {CONFIDENCE_MIN}..{CONFIDENCE_MAX}")
+    if old is None:
+        return float(grade)
+    return _snap((old + grade) / 2)
+
+
+def confidence_to_cell(value: float) -> str:
+    """Canonical <v> text for the .xlsx: '3' for 3.0, '3.5' for 3.5.
+
+    Whole numbers must not be written as '3.0': every pre-averaging value in the
+    workbook is a bare integer, and a needless '.0' makes untouched and rewritten
+    cells look different for no reason.
+    """
+    return f"{value:g}"
+
+
+def format_confidence(value: float | None) -> str:
+    """Human-readable score for the UI: '3', '3.5', or 'ungraded'."""
+    return "ungraded" if value is None else confidence_to_cell(value)
 
 
 def parse_row(topic: str, headers: list, cells: list, excel_row: int) -> Card | None:

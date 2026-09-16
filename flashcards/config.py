@@ -23,11 +23,17 @@ BACKUP_DIR = APP_DIR / "backups"
 #   direction "mixed"                -> random DE<->EN per card (user asked for switchable)
 #   difficult_threshold 2           -> "needs work" band in the workbook's own 1-2/3-4/5 scheme
 #   order "lowest_confidence_first"  -> spend review time where it helps most
+#   order "weighted"                -> weakest words likeliest, but not fixed
+#   session_size 20                 -> ~6 min for the first pass at 18 s/card, up
+#                                      to ~24 min if every word climbs to 5 (a
+#                                      word at 1 needs 4 passes under averaging);
+#                                      also Anki's long-standing new-cards/day
 DEFAULT_PREFS = {
     "direction": "mixed",             # "de_en" | "en_de" | "mixed"
     "difficult_threshold": 2,
-    "order": "lowest_confidence_first",  # | "random" | "oldest_first"
+    "order": "weighted",  # | "lowest_confidence_first" | "random" | "oldest_first"
     "repeat_until_mastered": False,
+    "session_size": 20,
 }
 
 
