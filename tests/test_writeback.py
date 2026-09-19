@@ -32,7 +32,7 @@ def test_updates_only_target_cells_and_backs_up(workbook_path, tmp_path):
     assert result.sheets_touched == ["School & Office", "Verbs"]
     assert os.path.isfile(result.backup_path)
 
-    reloaded = {c.german: c for c in load_cards(str(workbook_path)).cards}
+    reloaded = {c.term: c for c in load_cards(str(workbook_path)).cards}
     assert reloaded["Stift"].confidence == 4
     assert reloaded["werden"].confidence == 5
     assert reloaded["Bericht"].confidence == 3  # untouched
@@ -45,7 +45,7 @@ def test_half_values_round_trip(workbook_path, tmp_path):
         str(workbook_path), {("School & Office", 2): 3.5, ("Verbs", 2): 4.0},
         original_mtime=data.mtime, backup_dir=str(tmp_path),
     )
-    reloaded = {c.german: c for c in load_cards(str(workbook_path)).cards}
+    reloaded = {c.term: c for c in load_cards(str(workbook_path)).cards}
     assert reloaded["Stift"].confidence == 3.5
     assert reloaded["werden"].confidence == 4.0
     # A whole number is written bare, never as "4.0" (see models.confidence_to_cell)

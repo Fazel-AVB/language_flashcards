@@ -1,11 +1,18 @@
-"""Canonical card model and the header -> field mapping.
+"""Canonical card model, the positional column contract, and the language pair.
 
-The reference workbook stores one word per row across several "topic" sheets.
-Column *positions* (A..L) are identical on every topic sheet, but the header
-*labels* differ by sheet (e.g. column D is "Article", "Article / Auxiliary" or
-"Article (n/a)"; column E is "Plural", "Plural / Verb forms" or
-"Comparative / Superlative"). We therefore map by position, not by label, and
-keep the sheet's real labels only for display captions.
+The reference workbook stores one word per row across several "topic" sheets. All
+topic sheets, in every workbook, share one fixed layout (columns A..L, header on
+row 1). Column *positions* are the contract; the header *labels* for columns D and
+E differ by sheet (column D is "Article", "Article / Auxiliary" or "Article (n/a)";
+column E is "Plural", "Plural / Verb forms" or "Comparative / Superlative"). We
+therefore map by position, not by label, and keep the sheet's real labels only for
+display captions.
+
+THE ONE THING READ FROM A LABEL: cells A1 and B1 hold the bare *language names*
+("German"/"English", or "English"/"Persian"). That is how one app serves several
+language pairs without a config entry per workbook -- see `language_pair_from_header`
+and the schema table in README.md. Do not "improve" those headers into prose like
+"English Term / Expression": the text is displayed verbatim as the language name.
 
 Downstream: `Card.sheet` + `Card.row` are the write-back address used by
 `writeback.apply_confidence_updates`. Do not derive the row from list order --
@@ -15,31 +22,47 @@ filtered/blank rows would shift it.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 
 # Column order on every topic sheet, A..L. Position is the contract; see module docstring.
+# `term` is the word being learned (column A), `meaning` its native-language gloss (B).
 FIELD_ORDER = (
-    "german",         # A
-    "english",        # B
-    "word_type",      # C
-    "article_aux",    # D
-    "forms",          # E
-    "pronunciation",  # F
-    "example_de",     # G
-    "example_en",     # H
-    "synonyms",       # I
-    "notes",          # J
-    "date_added",     # K
-    "confidence",     # L
+    "term",              # A -- in the language named by A1
+    "meaning",           # B -- in the language named by B1
+    "word_type",         # C
+    "article_aux",       # D  (blank for languages without articles, e.g. English)
+    "forms",             # E
+    "pronunciation",     # F
+    "example_term",      # G
+    "example_meaning",   # H
+    "synonyms",          # I
+    "notes",             # J
+    "date_added",        # K
+    "confidence",        # L
 )
 
 # 1-based Excel column of the confidence value; hard-coded because it anchors write-back.
 CONFIDENCE_COL = "L"
 CONFIDENCE_COL_INDEX = 12
 
-# Sheets that are formula-driven dashboards, not word tables. Never read or written as cards.
-NON_TOPIC_SHEETS = frozenset({"Overview", "Flashcards", "Card Pool"})
+# Sheets to skip by name. LOAD-BEARING, do not delete in favour of the structural
+# `is_topic_header` test alone: German_learning.xlsx's "Card Pool" sheet has a
+# non-empty A1 ("Topic") and L1 == "Confidence", so it PASSES the structural test
+# while being a LET/LAMBDA dynamic-array dashboard. Matched as a pattern rather
+# than a fixed set because dashboards get renamed ("Overview" became
+# "Overview & Dashboard" in one workbook and back again).
+NON_TOPIC_NAME_RE = re.compile(
+    r"\b(overview|dashboard|flashcards?|card\s*pool|summary|stats)\b", re.IGNORECASE
+)
+
+# Scripts written right-to-left, by the language name as it appears in A1/B1.
+# Used only for display: the card text gets dir="rtl" so Persian does not render
+# jumbled next to Latin script.
+RTL_LANGUAGES = frozenset({
+    "persian", "farsi", "arabic", "hebrew", "urdu", "pashto", "dari", "kurdish",
+})
 
 CONFIDENCE_MIN = 1
 CONFIDENCE_MAX = 5
@@ -53,22 +76,42 @@ CONFIDENCE_STEP = 0.5
 
 
 @dataclass(frozen=True)
+class LanguagePair:
+    """Which language is being learned, and which one glosses it.
+
+    Read from the A1/B1 headers of a topic sheet, so a workbook declares its own
+    pair and the app hard-codes neither. `term` is column A, `native` column B.
+    """
+
+    term: str
+    native: str
+
+    def front_label(self, direction: str) -> str:
+        """Caption for the current card direction, e.g. "English -> Persian"."""
+        if direction == "native_to_term":
+            return f"{self.native} → {self.term}"
+        return f"{self.term} → {self.native}"
+
+
+@dataclass(frozen=True)
 class Card:
     """One vocabulary entry, plus its physical location for write-back."""
 
     topic: str
-    german: str
-    english: str
+    term: str                  # the word being learned (column A)
+    meaning: str               # its native-language gloss (column B)
     word_type: str | None
     article_aux: str | None
     forms: str | None
     pronunciation: str | None
-    example_de: str | None
-    example_en: str | None
+    example_term: str | None
+    example_meaning: str | None
     synonyms: str | None
     notes: str | None
     date_added: date | None
     confidence: float | None   # half-steps; grades are averaged in, not substituted
+
+    languages: LanguagePair  # this sheet's pair, for UI labels and RTL handling
 
     sheet: str          # source sheet name (== topic); explicit so write-back never guesses
     row: int            # 1-based Excel row of this word
@@ -85,14 +128,42 @@ class Card:
 def is_topic_header(header_row: list) -> bool:
     """True if a sheet's first row looks like a word table (not a dashboard).
 
-    Checks column A == "German" and column L mentions confidence, so an added
-    topic sheet is picked up automatically while dashboards are skipped.
+    Structural, not name-based: columns A and B must be filled (the two language
+    names) and column L must mention confidence. This is what lets a new topic
+    sheet, or a whole new language pair, be picked up with no code change.
+
+    NOT sufficient on its own -- see `NON_TOPIC_NAME_RE`.
     """
     if not header_row or len(header_row) < CONFIDENCE_COL_INDEX:
         return False
-    first = _clean(header_row[0])
-    last = _clean(header_row[CONFIDENCE_COL_INDEX - 1])
-    return bool(first) and first.lower() == "german" and "confidence" in (last or "").lower()
+    term = _clean(header_row[0])
+    native = _clean(header_row[1])
+    confidence = _clean(header_row[CONFIDENCE_COL_INDEX - 1])
+    return bool(term) and bool(native) and "confidence" in (confidence or "").lower()
+
+
+def is_topic_sheet(name: str, header_row: list) -> bool:
+    """Both gates: the name is not a dashboard's and the header row is a word table."""
+    return not NON_TOPIC_NAME_RE.search(name or "") and is_topic_header(header_row)
+
+
+def language_pair_from_header(header_row: list) -> LanguagePair:
+    """Read the pair from A1/B1, verbatim.
+
+    Deliberately no parsing of "English Term / Expression" into "English": every
+    heuristic that strips decoration also mangles a legitimate name (e.g. a B1 of
+    "Meaning (Persian)"), and it would do so silently. The schema requires bare
+    names, so a decorated header shows up immediately as a wrong label in the UI
+    rather than as a subtly wrong split.
+    """
+    term = _clean(header_row[0]) if header_row else None
+    native = _clean(header_row[1]) if len(header_row) > 1 else None
+    return LanguagePair(term=term or "Term", native=native or "Meaning")
+
+
+def is_rtl(language: str | None) -> bool:
+    """True if `language` is written right-to-left (display concern only)."""
+    return (language or "").strip().lower() in RTL_LANGUAGES
 
 
 def _snap(value: float) -> float:
@@ -152,8 +223,14 @@ def format_confidence(value: float | None) -> str:
     return "ungraded" if value is None else confidence_to_cell(value)
 
 
-def parse_row(topic: str, headers: list, cells: list, excel_row: int) -> Card | None:
-    """Build a Card from one data row, or None if it has no German word.
+def parse_row(
+    topic: str,
+    headers: list,
+    cells: list,
+    excel_row: int,
+    languages: LanguagePair,
+) -> Card | None:
+    """Build a Card from one data row, or None if it has no term in column A.
 
     `headers` and `cells` are the full A..L slices for the sheet. Missing
     trailing cells are tolerated (openpyxl trims empty tails).
@@ -161,25 +238,26 @@ def parse_row(topic: str, headers: list, cells: list, excel_row: int) -> Card | 
     padded = list(cells) + [None] * (len(FIELD_ORDER) - len(cells))
     values = {field: _clean(padded[i]) for i, field in enumerate(FIELD_ORDER)}
 
-    if not values["german"]:
+    if not values["term"]:
         return None
 
     hdr = list(headers) + [None] * (len(FIELD_ORDER) - len(headers))
 
     return Card(
         topic=topic,
-        german=values["german"],
-        english=values["english"] or "",
+        term=values["term"],
+        meaning=values["meaning"] or "",
         word_type=values["word_type"],
         article_aux=values["article_aux"],
         forms=values["forms"],
         pronunciation=values["pronunciation"],
-        example_de=values["example_de"],
-        example_en=values["example_en"],
+        example_term=values["example_term"],
+        example_meaning=values["example_meaning"],
         synonyms=values["synonyms"],
         notes=values["notes"],
         date_added=_as_date(padded[10]),
         confidence=coerce_confidence(padded[11]),
+        languages=languages,
         sheet=topic,
         row=excel_row,
         article_label=_clean(hdr[3]) or "Article / Auxiliary",

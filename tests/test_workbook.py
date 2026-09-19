@@ -9,11 +9,11 @@ from flashcards.workbook import WorkbookError, load_cards
 def test_loads_only_topic_sheets(workbook_path):
     data = load_cards(str(workbook_path))
     assert data.topics == ["School & Office", "Verbs", "Adjectives & Adverbs"]
-    assert {c.german for c in data.cards} == {"Stift", "Bericht", "werden", "riesig"}
+    assert {c.term for c in data.cards} == {"Stift", "Bericht", "werden", "riesig"}
 
 
 def test_position_mapping_survives_header_variants(workbook_path):
-    cards = {c.german: c for c in load_cards(str(workbook_path)).cards}
+    cards = {c.term: c for c in load_cards(str(workbook_path)).cards}
 
     verb = cards["werden"]
     assert verb.article_aux == "sein"
@@ -27,7 +27,7 @@ def test_position_mapping_survives_header_variants(workbook_path):
 
 
 def test_confidence_and_dates(workbook_path):
-    cards = {c.german: c for c in load_cards(str(workbook_path)).cards}
+    cards = {c.term: c for c in load_cards(str(workbook_path)).cards}
     assert cards["Stift"].confidence == 1
     assert cards["Bericht"].confidence == 3
     assert cards["werden"].confidence is None          # blank cell -> ungraded
@@ -36,7 +36,7 @@ def test_confidence_and_dates(workbook_path):
 
 
 def test_write_back_address_is_excel_row(workbook_path):
-    cards = {c.german: c for c in load_cards(str(workbook_path)).cards}
+    cards = {c.term: c for c in load_cards(str(workbook_path)).cards}
     # Header is row 1; first data row is 2, second is 3.
     assert (cards["Stift"].sheet, cards["Stift"].row) == ("School & Office", 2)
     assert (cards["Bericht"].sheet, cards["Bericht"].row) == ("School & Office", 3)

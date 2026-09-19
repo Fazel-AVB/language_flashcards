@@ -27,7 +27,7 @@ def graded(workbook_path):
     base = load_cards(str(workbook_path)).cards[0]
     scores = [1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5, None]
     return [
-        replace(base, german=f"w{i}", row=i + 2, confidence=None if s is None else float(s))
+        replace(base, term=f"w{i}", row=i + 2, confidence=None if s is None else float(s))
         for i, s in enumerate(scores)
     ]
 

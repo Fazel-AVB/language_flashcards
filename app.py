@@ -1,26 +1,37 @@
-"""German flashcards -- Streamlit UI.
+"""Flashcards -- Streamlit UI.
 
 Run locally:  streamlit run app.py     (or double-click launch.bat on Windows)
 
 This module is UI + session state only. All data logic lives in the `flashcards`
 package so it can be tested without Streamlit. Nothing is written to the
 workbook until the user confirms on the summary screen.
+
+Language-pair agnostic: every visible language name comes from the workbook's own
+A1/B1 headers via `models.LanguagePair`, so the same app serves German/English and
+English/Persian. Do not reintroduce hard-coded "German" / "English" labels.
 """
 
 from __future__ import annotations
 
+import html
 import subprocess
 import sys
 
 import streamlit as st
 
 from flashcards import config
-from flashcards.models import CONFIDENCE_MAX, Card, blend_confidence, format_confidence
-from flashcards.session import ORDERS, build_deck, pick_direction, pick_next_repeat
+from flashcards.models import (
+    CONFIDENCE_MAX,
+    Card,
+    blend_confidence,
+    format_confidence,
+    is_rtl,
+)
+from flashcards.session import DIRECTIONS, ORDERS, build_deck, pick_direction, pick_next_repeat
 from flashcards.workbook import WorkbookError, load_cards
 from flashcards.writeback import WritebackError, apply_confidence_updates
 
-st.set_page_config(page_title="German Flashcards", page_icon="\U0001F1E9\U0001F1EA", layout="centered")
+st.set_page_config(page_title="Flashcards", page_icon="\U0001F5C2", layout="centered")
 
 ORDER_LABELS = {
     "weighted": "Weighted (weakest likeliest)",
@@ -36,6 +47,44 @@ GRADE_LABELS = {
     4: "4 - solid",
     5: "5 - mastered",
 }
+
+# Inline styles for card text. Streamlit's own markdown cannot carry a writing
+# direction, so card text goes through `_md` as HTML (see there); these keep the
+# result looking like the h1/blockquote it replaces.
+_FRONT_STYLE = "font-size:2.6rem;font-weight:700;line-height:1.25;margin:.3rem 0"
+_TERM_STYLE = "font-size:1.6rem;font-weight:600;margin:.2rem 0"
+_QUOTE_LTR = "border-left:3px solid rgba(128,128,128,.4);padding-left:.7rem;margin:.3rem 0"
+_QUOTE_RTL = "border-right:3px solid rgba(128,128,128,.4);padding-right:.7rem;margin:.3rem 0"
+
+
+# --------------------------------------------------------------------------- #
+# Bidirectional text
+# --------------------------------------------------------------------------- #
+
+def _md(text: str, language: str, *, style: str = "", italic: bool = False,
+        quote: bool = False) -> None:
+    """Render one piece of card text in the correct writing direction.
+
+    Streamlit markdown has no direction control, so right-to-left text (Persian,
+    Arabic, Hebrew) needs an explicit dir attribute: without it trailing
+    punctuation jumps to the wrong end and embedded Latin words reorder. HTML is
+    used for card text only; every other label stays plain markdown.
+
+    `text` is escaped because vocabulary legitimately contains < and & (e.g. a
+    note like "a < b"), which would otherwise be swallowed as markup.
+    """
+    rtl = is_rtl(language)
+    if quote:
+        style = f"{_QUOTE_RTL if rtl else _QUOTE_LTR};{style}"
+    if italic:
+        style = f"{style};font-style:italic"
+    # Built by concatenation, not an f-string: Python 3.10 rejects a backslash
+    # inside an f-string expression, and the dir attribute needs quoted "rtl".
+    direction = ' dir="rtl"' if rtl else ""
+    st.markdown(
+        '<div' + direction + ' style="' + style + '">' + html.escape(text) + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -74,8 +123,17 @@ def _reference_sidebar() -> str | None:
         try:
             data = load_cards(current)
             st.sidebar.caption(
-                f"{len(data.cards)} words - {len(data.topics)} topics"
+                f"{data.languages.term} \u2192 {data.languages.native}  \u00b7  "
+                f"{len(data.cards)} words  \u00b7  {len(data.topics)} topics"
             )
+            # A sheet whose A1/B1 disagree reviews fine (each card carries its own
+            # pair) but cannot be summarised by one label, so say so rather than
+            # quietly mislabel the deck.
+            if data.language_conflicts:
+                st.sidebar.warning(
+                    "These sheets declare a different language pair in A1/B1: "
+                    + ", ".join(data.language_conflicts)
+                )
         except WorkbookError as exc:
             st.sidebar.error(str(exc))
     else:
@@ -128,17 +186,20 @@ def _reset_session_keep_workbook() -> None:
     st.session_state["stage"] = "summary"
 
 
-def _ensure_workbook(path: str) -> bool:
-    """Load the workbook into session state if not already loaded. Returns success."""
+def _ensure_workbook(path: str) -> str | None:
+    """Load the workbook into session state if needed. Returns an error message.
+
+    Returns the message instead of rendering it: `main` draws the page title from
+    the loaded workbook's language pair, so it must decide layout order, not this.
+    """
     if st.session_state.get("wb") and st.session_state["wb"].path == path:
-        return True
+        return None
     try:
         st.session_state["wb"] = load_cards(path)
     except WorkbookError as exc:
-        st.error(str(exc))
-        return False
+        return str(exc)
     st.session_state["stage"] = "setup"
-    return True
+    return None
 
 
 def _cards_by_id() -> dict[str, Card]:
@@ -162,6 +223,7 @@ def _effective_confidence(card: Card) -> float | None:
 
 def _stage_setup(prefs: dict) -> None:
     wb = st.session_state["wb"]
+    pair = wb.languages
     st.subheader("Build a deck")
 
     mode_label = st.radio(
@@ -189,12 +251,18 @@ def _stage_setup(prefs: dict) -> None:
             format_func=lambda o: ORDER_LABELS.get(o, o.replace("_", " ")),
         )
     with col2:
+        # Labels come from the workbook's pair, so this widget reads
+        # "German -> English" or "English -> Persian" with no code change.
+        direction_labels = {
+            "mixed": "Mixed (random)",
+            "term_to_native": f"{pair.term} \u2192 {pair.native}",
+            "native_to_term": f"{pair.native} \u2192 {pair.term}",
+        }
         direction = st.selectbox(
             "Direction",
-            ["mixed", "de_en", "en_de"],
-            index=["mixed", "de_en", "en_de"].index(prefs["direction"]),
-            format_func={"mixed": "Mixed (random)", "de_en": "German \u2192 English",
-                         "en_de": "English \u2192 German"}.get,
+            DIRECTIONS,
+            index=DIRECTIONS.index(prefs["direction"]) if prefs["direction"] in DIRECTIONS else 0,
+            format_func=direction_labels.get,
         )
     size = int(st.number_input(
         "Words per session (unique)",
@@ -259,29 +327,36 @@ def _stage_setup(prefs: dict) -> None:
         st.rerun()
 
 
-def _front_text(card: Card, direction: str) -> tuple[str, str]:
-    if direction == "de_en":
-        hint = card.pronunciation or ""
-        return card.german, hint
-    return card.english, ""
+def _front_text(card: Card, direction: str) -> tuple[str, str, str]:
+    """(front text, its language, hint).
+
+    The pronunciation hint is shown only on the term side: next to the meaning it
+    would spell out the answer.
+    """
+    if direction == "term_to_native":
+        return card.term, card.languages.term, card.pronunciation or ""
+    return card.meaning, card.languages.native, ""
 
 
 def _render_back(card: Card) -> None:
+    pair = card.languages
     if card.article_aux:
         st.markdown(f"**{card.article_label}:** {card.article_aux}")
-    st.markdown(f"### {card.german}")
+    _md(card.term, pair.term, style=_TERM_STYLE)
     if card.pronunciation:
         st.markdown(f"*{card.pronunciation}*")
-    st.markdown(f"**English:** {card.english}")
+    st.markdown(f"**{pair.native}:**")
+    _md(card.meaning, pair.native)
     meta = [x for x in (card.word_type, card.forms and f"{card.forms_label}: {card.forms}") if x]
     if meta:
         st.caption("  \u00b7  ".join(meta))
-    if card.example_de:
-        st.markdown(f"> {card.example_de}")
-        if card.example_en:
-            st.markdown(f"> _{card.example_en}_")
+    if card.example_term:
+        _md(card.example_term, pair.term, quote=True)
+        if card.example_meaning:
+            _md(card.example_meaning, pair.native, quote=True, italic=True)
     if card.synonyms:
-        st.markdown(f"**Related:** {card.synonyms}")
+        st.markdown("**Related:**")
+        _md(card.synonyms, pair.term)
     if card.notes:
         with st.expander("Notes"):
             st.write(card.notes)
@@ -298,11 +373,11 @@ def _stage_review() -> None:
     st.progress(done_n / deck_n if deck_n else 0.0,
                text=f"{done_n} / {deck_n} words graded")
     pending_repeats = len([i for i in st.session_state["pending"] if i != cid])
-    tag = "DE \u2192 EN" if direction == "de_en" else "EN \u2192 DE"
+    tag = card.languages.front_label(direction)
     st.caption(f"{card.topic}  \u00b7  {tag}" + (f"  \u00b7  {pending_repeats} repeat(s) queued" if pending_repeats > 0 else ""))
 
-    front, hint = _front_text(card, direction)
-    st.markdown(f"# {front}")
+    front, front_language, hint = _front_text(card, direction)
+    _md(front, front_language, style=_FRONT_STYLE)
     if hint:
         st.markdown(f"*{hint}*")
     old = _effective_confidence(card)
@@ -415,6 +490,7 @@ def _stage_summary(path: str) -> None:
         return
 
     cards = _cards_by_id()
+    pair = st.session_state["wb"].languages
     changes: dict[str, float] = st.session_state["changes"]
 
     if not changes:
@@ -423,14 +499,16 @@ def _stage_summary(path: str) -> None:
         rows = []
         for cid, new in changes.items():
             c = cards[cid]
+            # Column headers are the language names, so the table reads correctly
+            # whichever pair the workbook holds.
             rows.append({
                 "Topic": c.topic,
-                "German": c.german,
-                "English": c.english,
+                pair.term: c.term,
+                pair.native: c.meaning,
                 "Old": format_confidence(c.confidence) if c.confidence is not None else "\u2014",
                 "New": format_confidence(new),
             })
-        rows.sort(key=lambda r: (r["Topic"], r["German"]))
+        rows.sort(key=lambda r: (r["Topic"], r[pair.term]))
         st.dataframe(rows, hide_index=True, use_container_width=True)
         st.caption(f"{len(rows)} cell(s) will change in {path}. A timestamped backup is made first.")
 
@@ -471,14 +549,21 @@ def _write(path: str) -> None:
 # --------------------------------------------------------------------------- #
 
 def main() -> None:
-    st.title("German Flashcards")
+    # Sidebar first, then the title: the title names the target language, which is
+    # only known once the workbook is loaded. Sidebar and main area render in
+    # separate columns, so call order does not affect the visible layout.
     path = _reference_sidebar()
 
     if not path:
+        st.title("Flashcards")
         st.info("Set a reference file in the sidebar to begin.")
         return
 
-    if not _ensure_workbook(path):
+    error = _ensure_workbook(path)
+    wb = st.session_state.get("wb")
+    st.title(f"{wb.languages.term} Flashcards" if wb else "Flashcards")
+    if error:
+        st.error(error)
         return
 
     prefs = config.load_config()["prefs"]

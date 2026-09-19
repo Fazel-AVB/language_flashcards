@@ -23,6 +23,9 @@ from pathlib import Path
 from openpyxl import Workbook
 
 # Column A..L, matching models.FIELD_ORDER. Only column D and E labels vary.
+# A1/B1 must be the bare language names: that is how the app reads the pair
+# (models.language_pair_from_header), so "German"/"English" here makes the demo a
+# German/English workbook.
 _BASE_HEADERS = [
     "German", "English", "Word type", "Article", "Plural", "Pronunciation",
     "Example (German)", "Example (English)", "Synonyms / Related", "Notes",
@@ -32,7 +35,7 @@ _NOUN_HEADERS = list(_BASE_HEADERS)
 _VERB_HEADERS = _BASE_HEADERS[:3] + ["Article / Auxiliary", "Plural / Verb forms"] + _BASE_HEADERS[5:]
 _ADJ_HEADERS = _BASE_HEADERS[:3] + ["Article (n/a)", "Comparative / Superlative"] + _BASE_HEADERS[5:]
 
-# (german, english, article/aux, plural/forms, example_de, example_en)
+# (term, meaning, article/aux, plural/forms, example in term lang, in native lang)
 _TOPICS: dict[str, tuple[list[str], str, list[tuple[str, ...]]]] = {
     "School & Office": (_NOUN_HEADERS, "Noun", [
         ("Stift", "pen", "der", "die Stifte", "Ich schreibe mit einem Stift.", "I write with a pen."),
@@ -114,7 +117,7 @@ def make_demo_workbook(path: str | Path, seed: int = 7) -> Path:
     wb = Workbook()
 
     # The dashboard sheet goes first, as in the real workbook. It is formula-driven
-    # and `models.NON_TOPIC_SHEETS` makes the app skip it entirely; notebook 03
+    # and `models.NON_TOPIC_NAME_RE` makes the app skip it by name; notebook 03
     # checks it survives a write-back byte for byte.
     dash = wb.active
     dash.title = "Overview"
@@ -132,11 +135,11 @@ def make_demo_workbook(path: str | Path, seed: int = 7) -> Path:
     for topic, (headers, word_type, rows) in _TOPICS.items():
         ws = wb.create_sheet(topic)
         ws.append(headers)
-        for n, (german, english, article, forms, ex_de, ex_en) in enumerate(rows):
+        for n, (term, meaning, article, forms, ex_term, ex_meaning) in enumerate(rows):
             ws.append([
-                german, english, word_type, article, forms,
+                term, meaning, word_type, article, forms,
                 "",                                   # pronunciation: often blank in practice
-                ex_de, ex_en,
+                ex_term, ex_meaning,
                 "", "",                               # synonyms / notes: often blank
                 start + timedelta(days=rng.randrange(0, 90)),
                 rng.choice(_SCORE_POOL),

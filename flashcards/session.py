@@ -15,6 +15,12 @@ from .models import CONFIDENCE_MAX, Card
 MODES = ("topic", "mix", "difficult")
 ORDERS = ("weighted", "lowest_confidence_first", "random", "oldest_first")
 
+# Direction is named by ROLE, not by language code: one app serves several
+# language pairs (German/English, English/Persian, ...), so "de_en" could not
+# mean anything in a Persian workbook. "term" is the word being learned
+# (column A), "native" its gloss (column B). See models.LanguagePair.
+DIRECTIONS = ("mixed", "term_to_native", "native_to_term")
+
 # Sampling weight = (5.5 - score) ** 2, so score 1 is 81x likelier to be drawn
 # than score 5, and an ungraded word outranks everything.
 #
@@ -141,11 +147,13 @@ def pick_next_repeat(
 def pick_direction(pref: str, card_id: str, seed: int | None = None) -> str:
     """Resolve the front/back direction for one card.
 
-    "mixed" -> deterministic per (seed, card) so a card keeps its direction until
-    it is graded and re-drawn, but different cards vary.
+    Returns "term_to_native" (show the word, recall the meaning) or
+    "native_to_term" (the reverse). "mixed" -> deterministic per (seed, card) so a
+    card keeps its direction until it is graded and re-drawn, but different cards
+    vary.
     """
-    if pref in ("de_en", "en_de"):
+    if pref in ("term_to_native", "native_to_term"):
         return pref
     # String seed: a tuple seed is deprecated (hashing-based) since Python 3.9.
     rng = random.Random(f"{seed}:{card_id}")
-    return "de_en" if rng.random() < 0.5 else "en_de"
+    return "term_to_native" if rng.random() < 0.5 else "native_to_term"

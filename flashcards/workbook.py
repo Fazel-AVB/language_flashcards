@@ -1,8 +1,11 @@
 """Read the reference workbook into a list of Cards (read-only).
 
-Only *topic* sheets are read (see `models.NON_TOPIC_SHEETS` and
-`models.is_topic_header`). The dashboard sheets are formula-driven and are never
-parsed or written by this app.
+Only *topic* sheets are read (see `models.is_topic_sheet`). The dashboard sheets
+are formula-driven and are never parsed or written by this app.
+
+The workbook declares its own language pair in the A1/B1 headers of each topic
+sheet, so this module works unchanged for German/English, English/Persian, or any
+other pair. `WorkbookData.languages` is the pair the UI labels itself with.
 
 Downstream: `WorkbookData.mtime` is captured here and re-checked by
 `writeback.apply_confidence_updates` -- if the file changed on disk between load
@@ -19,9 +22,10 @@ from openpyxl import load_workbook
 
 from .models import (
     CONFIDENCE_COL_INDEX,
-    NON_TOPIC_SHEETS,
     Card,
-    is_topic_header,
+    LanguagePair,
+    is_topic_sheet,
+    language_pair_from_header,
     parse_row,
 )
 
@@ -44,7 +48,13 @@ class WorkbookData:
     path: str
     mtime: float
     cards: list[Card]
+    languages: LanguagePair
     topics: list[str] = field(default_factory=list)
+    # Sheets whose A1/B1 disagree with the first topic sheet's pair. Surfaced as a
+    # warning rather than an error: each Card carries its own sheet's pair, so a
+    # mixed workbook still reviews correctly, it just cannot be labelled with one
+    # pair in the sidebar.
+    language_conflicts: list[str] = field(default_factory=list)
 
     def stats(self, difficult_threshold: int) -> list[TopicStat]:
         out: list[TopicStat] = []
@@ -88,24 +98,27 @@ def load_cards(path: str) -> WorkbookData:
 
     cards: list[Card] = []
     topics: list[str] = []
+    pairs: dict[str, LanguagePair] = {}
     try:
         for name in wb.sheetnames:
-            if name in NON_TOPIC_SHEETS:
-                continue
             ws = wb[name]
             rows = ws.iter_rows(values_only=True)
             try:
                 header = list(next(rows))
             except StopIteration:
                 continue
-            if not is_topic_header(header):
+            if not is_topic_sheet(name, header):
                 continue
 
             topics.append(name)
             header = header[:CONFIDENCE_COL_INDEX]
+            languages = language_pair_from_header(header)
+            pairs[name] = languages
             # openpyxl is 1-based; row 1 is the header, data starts at row 2.
             for offset, values in enumerate(rows, start=2):
-                card = parse_row(name, header, list(values)[:CONFIDENCE_COL_INDEX], offset)
+                card = parse_row(
+                    name, header, list(values)[:CONFIDENCE_COL_INDEX], offset, languages
+                )
                 if card is not None:
                     cards.append(card)
     finally:
@@ -113,11 +126,24 @@ def load_cards(path: str) -> WorkbookData:
 
     if not topics:
         raise WorkbookError(
-            "No topic sheets found. A topic sheet needs 'German' in column A and "
-            "'Confidence (1-5)' in column L."
+            "No topic sheets found. A topic sheet needs the target language in A1, "
+            "the native language in B1, and 'Confidence (1-5)' in L1, with the "
+            "header on row 1."
         )
 
-    return WorkbookData(path=path, mtime=mtime, cards=cards, topics=topics)
+    # The first topic sheet defines the workbook's pair; the rest are checked
+    # against it so a half-converted workbook is visible instead of silent.
+    primary = pairs[topics[0]]
+    conflicts = [name for name, pair in pairs.items() if pair != primary]
+
+    return WorkbookData(
+        path=path,
+        mtime=mtime,
+        cards=cards,
+        languages=primary,
+        topics=topics,
+        language_conflicts=conflicts,
+    )
 
 
 def describe_reference(path: str) -> str:
@@ -127,4 +153,5 @@ def describe_reference(path: str) -> str:
     except WorkbookError as exc:
         return f"unreadable ({exc})"
     when = datetime.fromtimestamp(data.mtime).strftime("%Y-%m-%d %H:%M")
-    return f"{len(data.cards)} words / {len(data.topics)} topics / modified {when}"
+    pair = f"{data.languages.term}/{data.languages.native}"
+    return f"{pair} - {len(data.cards)} words / {len(data.topics)} topics / modified {when}"

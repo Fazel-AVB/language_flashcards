@@ -1,7 +1,11 @@
-# German Flashcards
+# Flashcards
 
 A local flashcard app that drills vocabulary from an Excel workbook and writes
 your self-graded confidence back into the same file — only after you confirm.
+
+Works for **any language pair**. Each workbook declares its own pair in the
+header row, so the same app drills German→English and English→Persian with no
+code change and no per-file setting. See "What the workbook needs" below.
 
 ## Setup (once)
 
@@ -30,7 +34,7 @@ The browser opens at `http://localhost:8501`.
    - **Words per session** — the deck is capped at this many *unique* words
      (default 20). See "How the deck is drawn" below.
    - Order: weighted (default) / lowest-confidence-first / random / oldest-first.
-   - Direction: mixed (random German↔English per card) / fixed either way.
+   - Direction: mixed (random target↔native per card) / fixed either way.
    - Optionally repeat cards graded below 5 until the deck clears.
 3. **Review:** read the front, "Show answer", then grade yourself 1–5. The grade
    is **averaged** with the word's current score, not substituted for it — see
@@ -102,10 +106,42 @@ Consequences worth knowing:
 
 ## What the workbook needs
 
-Any sheet with `German` in column A and `Confidence (1-5)` in column L is treated
-as a topic sheet. Column *positions* A–L are the contract; the header *labels*
-for columns D and E may differ per sheet (Article / Auxiliary / n-a; Plural /
-Verb forms / Comparative). `Overview`, `Flashcards` and `Card Pool` are ignored.
+One schema, used by every workbook. Header on **row 1**, data from **row 2**,
+columns **A–L** fixed:
+
+| col | header | notes |
+|---|---|---|
+| A | *target language name* | e.g. `German`, `English`. **A bare language name** |
+| B | *native language name* | e.g. `English`, `Persian`. **A bare language name** |
+| C | `Word type` | |
+| D | `Article / Auxiliary` | leave blank for languages without articles |
+| E | `Forms` | plural / verb forms / comparative, per sheet |
+| F | `Pronunciation` | IPA |
+| G | `Example (target)` | |
+| H | `Example (native)` | |
+| I | `Synonyms / Related` | |
+| J | `Notes` | |
+| K | `Date added` | |
+| L | `Confidence (1-5)` | the write-back anchor |
+
+Columns M onward are ignored, so extra bookkeeping columns can live there.
+
+**Cells A1 and B1 are the only headers the app reads as data.** They name the two
+languages and are displayed verbatim, driving the page title, the direction
+selector, the card labels and right-to-left rendering. So write `English`, not
+`English Term / Expression`. Everything else is resolved by *position*: the header
+labels for columns D and E deliberately differ per sheet (Article / Auxiliary /
+n-a; Plural / Verb forms / Comparative) and are shown only as captions.
+
+A sheet is read as a topic sheet when A1 and B1 are both filled and L1 mentions
+confidence. Dashboard sheets are skipped by name (anything matching *overview*,
+*dashboard*, *flashcards*, *card pool*, *summary*, *stats*). The name check is not
+redundant: a "Card Pool" sheet with `Topic` in A1 and `Confidence` in L1 satisfies
+the structural test while being a dynamic-array dashboard.
+
+Right-to-left languages (Persian, Arabic, Hebrew, Urdu, …) are detected from the
+language name and rendered with `dir="rtl"`, so Persian text and its punctuation
+do not scramble against Latin script.
 
 ## Why write-back is done by hand, not openpyxl
 
@@ -123,12 +159,12 @@ file changed on disk since it was loaded, and always backs up first.
 app.py                 Streamlit UI + session state
 data/                  your workbook lives here (gitignored)
 flashcards/
-  models.py            Card dataclass, column/position mapping, grade averaging
+  models.py            Card dataclass, LanguagePair, column/position mapping, grade averaging
   workbook.py          read topic sheets -> Cards (read-only)
   session.py           deck building: filter, weighted draw, repeat picker
   writeback.py         surgical Confidence write into the .xlsx
   config.py            persistent reference path + preferences
-tests/                 pytest suite (synthetic workbook fixture)
+tests/                 pytest suite (one synthetic workbook per language pair)
 experiments/           executable notebooks demonstrating the tool (see below)
 ```
 

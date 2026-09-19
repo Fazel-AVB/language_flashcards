@@ -20,21 +20,26 @@ CONFIG_PATH = APP_DIR / "config.json"
 BACKUP_DIR = APP_DIR / "backups"
 
 # Defaults chosen so a first run is immediately usable:
-#   direction "mixed"                -> random DE<->EN per card (user asked for switchable)
-#   difficult_threshold 2           -> "needs work" band in the workbook's own 1-2/3-4/5 scheme
-#   order "lowest_confidence_first"  -> spend review time where it helps most
-#   order "weighted"                -> weakest words likeliest, but not fixed
-#   session_size 20                 -> ~6 min for the first pass at 18 s/card, up
-#                                      to ~24 min if every word climbs to 5 (a
-#                                      word at 1 needs 4 passes under averaging);
-#                                      also Anki's long-standing new-cards/day
+#   direction "mixed"                -> random term<->native per card (switchable)
+#   difficult_threshold 2            -> "needs work" band in the workbook's own 1-2/3-4/5 scheme
+#   order "weighted"                 -> weakest words likeliest, but not fixed
+#   session_size 20                  -> ~6 min for the first pass at 18 s/card, up
+#                                       to ~24 min if every word climbs to 5 (a
+#                                       word at 1 needs 4 passes under averaging);
+#                                       also Anki's long-standing new-cards/day
 DEFAULT_PREFS = {
-    "direction": "mixed",             # "de_en" | "en_de" | "mixed"
+    "direction": "mixed",  # "term_to_native" | "native_to_term" | "mixed"
     "difficult_threshold": 2,
     "order": "weighted",  # | "lowest_confidence_first" | "random" | "oldest_first"
     "repeat_until_mastered": False,
     "session_size": 20,
 }
+
+# Pre-multilingual config.json files store language-coded directions. Migrated on
+# read so an existing install does not hit an unknown-direction error on the first
+# launch after the upgrade. The mapping is by role: German was the term language
+# in the only workbook that existed when those values were written.
+_LEGACY_DIRECTIONS = {"de_en": "term_to_native", "en_de": "native_to_term"}
 
 
 def load_config() -> dict:
@@ -48,6 +53,7 @@ def load_config() -> dict:
             # leave the bad file in place for the user to inspect.
             data = {}
     prefs = {**DEFAULT_PREFS, **(data.get("prefs") or {})}
+    prefs["direction"] = _LEGACY_DIRECTIONS.get(prefs["direction"], prefs["direction"])
     return {"reference_path": data.get("reference_path"), "prefs": prefs}
 
 
