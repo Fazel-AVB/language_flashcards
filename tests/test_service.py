@@ -182,3 +182,15 @@ def test_mixed_without_voice_never_listens(svc):
         kinds.add(view["exercise"]["kind"])
         view = svc.skip()
     assert "listen" not in kinds
+
+
+def test_scramble_view_and_check(svc):
+    # Verbs holds one word, werden, whose example has 4 words; a random draw from a
+    # bigger topic could pick a 3-word example, which correctly falls back to choice.
+    view = svc.start({"mode": "topic", "topics": ["Verbs"], "exercise": "scramble"})
+    ex = view["exercise"]
+    assert ex["kind"] == "scramble" and view["card"]["front"]["text"] == ""
+    with pytest.raises(UserError, match="every word"):
+        svc.check([0])
+    result = svc.check(list(range(len(ex["tiles"]))))["result"]
+    assert result["suggested"] in (2, 3, 4) and result["expected"].endswith((".", "!", "?"))

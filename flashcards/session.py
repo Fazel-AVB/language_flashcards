@@ -33,10 +33,10 @@ DIRECTIONS = ("mixed", "term_to_native", "native_to_term")
 # example sentence containing the word, nothing to build distractors from)
 # falls back: blank -> choice -> flashcard. "article" decks contain only
 # der/die/das nouns (service.Service._build filters them), so it never falls back.
-EXERCISES = ("flashcard", "choice", "blank", "recall", "listen", "article", "mixed")
+EXERCISES = ("flashcard", "choice", "blank", "recall", "listen", "scramble", "article", "mixed")
 # What each choice falls back to, in order; "flashcard" is always possible.
 _FALLBACK = {"choice": ("choice",), "blank": ("blank", "choice"), "recall": ("recall",),
-             "listen": ("listen", "recall"),
+             "listen": ("listen", "recall"), "scramble": ("scramble", "choice"),
              "article": ("article", "choice")}
 
 
@@ -45,6 +45,7 @@ class Exercise:
     kind: str                               # exercises.KINDS
     choice: exercises.Choice | None = None  # choice and article
     blank: exercises.Blank | None = None    # blank, recall and listen
+    scramble: exercises.Scramble | None = None
 
 # Sampling weight = (5.5 - score) ** 2, so score 1 is 81x likelier to be drawn
 # than score 5, and an ungraded word outranks everything.
@@ -350,6 +351,8 @@ class ReviewSession:
                 made["recall"] = Exercise("recall", blank=recall)
             if "listen" in wanted and self.can_listen and (listen := exercises.make_listen(card)):
                 made["listen"] = Exercise("listen", blank=listen)
+            if "scramble" in wanted and (scramble := exercises.make_scramble(card, rng)):
+                made["scramble"] = Exercise("scramble", scramble=scramble)
             if "article" in wanted and (article := exercises.make_article(card)):
                 made["article"] = Exercise("article", choice=article)
             if "choice" in wanted and (choice := exercises.make_choice(card, self.pool, self.direction_for(cid), rng)):
@@ -377,6 +380,13 @@ class ReviewSession:
             verdict = exercises.check_choice(ex.choice, picked)
             self.result = {"verdict": verdict, "picked": picked,
                            "expected": ex.choice.options[ex.choice.answer_index]}
+        elif ex.kind == "scramble":
+            if not isinstance(answer, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in answer):
+                raise ValueError("place every word exactly once")
+            verdict = exercises.check_scramble(ex.scramble, answer)
+            self.result = {"verdict": verdict, "order": answer,
+                           "given": " ".join(ex.scramble.tiles[i] for i in answer) + ex.scramble.end,
+                           "expected": " ".join(ex.scramble.answer) + ex.scramble.end}
         elif ex.kind in ("blank", "recall", "listen"):
             given = "" if answer is None else str(answer)
             verdict = exercises.check_typed(given, ex.blank)

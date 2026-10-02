@@ -1,5 +1,6 @@
 """Exercises built from the workbook itself: multiple choice, fill in the blank,
-type the word (recall), listening (dictation) and the German article drill.
+type the word (recall), listening (dictation), sentence scramble and the
+German article drill.
 
 An exercise only changes *how you answer* a card. After it is checked, the
 app proposes a grade (SUGGESTED_GRADE) and you confirm or override it with
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 
 from .models import Card
 
-KINDS = ("flashcard", "choice", "blank", "recall", "listen", "article")
+KINDS = ("flashcard", "choice", "blank", "recall", "listen", "scramble", "article")
 ARTICLES = ("der", "die", "das")
 CORRECT, CLOSE, WRONG = "correct", "close", "wrong"
 
@@ -32,6 +33,8 @@ SUGGESTED_GRADE = {
     ("blank", CORRECT): 4, ("blank", CLOSE): 3, ("blank", WRONG): 1,
     ("recall", CORRECT): 4, ("recall", CLOSE): 3, ("recall", WRONG): 1,
     ("listen", CORRECT): 4, ("listen", CLOSE): 3, ("listen", WRONG): 1,
+    # Word order, not the word: a wrong order rarely means the word is forgotten.
+    ("scramble", CORRECT): 4, ("scramble", CLOSE): 3, ("scramble", WRONG): 2,
     # A wrong article is not a forgotten word: you may well know what it means.
     # 2 ("shaky") keeps it coming back soon without resetting it like 1 would;
     # press 1 yourself if the word meant nothing to you.
@@ -39,6 +42,9 @@ SUGGESTED_GRADE = {
 }
 
 N_OPTIONS = 4
+# Scramble: under 4 words there is no order to get wrong; over 16 it becomes a
+# puzzle about the sentence rather than practice with the word.
+SCRAMBLE_MIN_WORDS, SCRAMBLE_MAX_WORDS = 4, 16
 # A blank covering most of the sentence is not an exercise: on the
 # "Idioms & Sentences" sheets the word IS the example sentence.
 MAX_BLANK_SHARE = 0.6
@@ -102,6 +108,62 @@ def make_choice(card: Card, pool: list[Card], direction: str, rng: random.Random
 
 def check_choice(choice: Choice, picked: int) -> str:
     return CORRECT if picked == choice.answer_index else WRONG
+
+
+@dataclass(frozen=True)
+class Scramble:
+    """The example sentence's words, shuffled; put them back in order."""
+
+    tiles: list[str]        # shuffled
+    answer: list[str]       # in order
+    end: str                # final punctuation, shown fixed after the last tile ("." "?" "!")
+
+
+# --------------------------------------------------------------------------- #
+# Sentence scramble
+# --------------------------------------------------------------------------- #
+
+def make_scramble(card: Card, rng: random.Random) -> Scramble | None:
+    """Shuffle the words of the example sentence (column G).
+
+    Words are split on spaces; commas stay on their word. The final ./?/!
+    is cut off and shown fixed, otherwise it would mark the last tile. The
+    capital on the first word is kept: in German it can't be told apart from
+    a noun's capital, and lower-casing a noun would teach a wrong spelling.
+    """
+    sentence = (card.example_term or "").strip()
+    m = re.search(r"[.!?…]+$", sentence)
+    end = m.group() if m else ""
+    words = sentence[: len(sentence) - len(end)].split()
+    if not SCRAMBLE_MIN_WORDS <= len(words) <= SCRAMBLE_MAX_WORDS:
+        return None
+    tiles = list(words)
+    for _ in range(10):  # a shuffle that leaves the sentence as it was is no exercise
+        rng.shuffle(tiles)
+        if tiles != words:
+            break
+    else:
+        return None  # e.g. every word identical
+    return Scramble(tiles=tiles, answer=words, end=end)
+
+
+def check_scramble(scramble: Scramble, order: list[int]) -> str:
+    """`order`: tile indices in the order you placed them; every tile exactly once.
+
+    Compared as text, so two identical words ("the ... the") may come in either
+    order. One swap of two neighbouring words is "close": usually a slip in
+    word order (verb position), not a sentence you couldn't build.
+    """
+    if sorted(order) != list(range(len(scramble.tiles))):
+        raise ValueError("place every word exactly once")
+    built = [scramble.tiles[i] for i in order]
+    if built == scramble.answer:
+        return CORRECT
+    diff = [i for i, (a, b) in enumerate(zip(built, scramble.answer)) if a != b]
+    if len(diff) == 2 and diff[1] == diff[0] + 1 and built[diff[0]] == scramble.answer[diff[1]] \
+            and built[diff[1]] == scramble.answer[diff[0]]:
+        return CLOSE
+    return WRONG
 
 
 # --------------------------------------------------------------------------- #

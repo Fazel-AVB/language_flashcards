@@ -331,6 +331,14 @@ class Service:
             native = ex.choice.answer_side == "native"
             lang_name = pair.native if native else pair.term
             exercise.update(options=ex.choice.options, rtl=is_rtl(lang_name), lang=language_code(lang_name))
+        if ex.scramble:
+            exercise.update(tiles=ex.scramble.tiles, end=ex.scramble.end, rtl=is_rtl(pair.term),
+                            lang=language_code(pair.term), hint=card.example_meaning or card.meaning,
+                            hint_rtl=is_rtl(pair.native))
+            if s.result is None:
+                # The tiles are the prompt; the word on top would only say which tile is "it".
+                front = {"text": "", "language": pair.term, "rtl": is_rtl(pair.term),
+                         "lang": language_code(pair.term), "hint": ""}
         if ex.blank:
             # answer_len sizes the input box: a length hint, as on paper worksheets.
             exercise.update(before=ex.blank.before, after=ex.blank.after, rtl=is_rtl(pair.term),

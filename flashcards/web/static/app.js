@@ -28,6 +28,7 @@ const EXERCISE_LABELS = {
   blank: "Fill in the blank",
   recall: "Type the word",
   listen: "Listening",
+  scramble: "Sentence scramble",
   article: "Article (der/die/das)",
   mixed: "Mixed",
 };
@@ -186,6 +187,7 @@ const state = {
   form: null,      // deck settings on the start page, seeded from the saved prefs
   busy: false,     // a grade is on its way: ignore key repeats
   shown: 0,        // counts card presentations, so auto-pronounce fires once per card side
+  placed: [],      // scramble: tile indices in the order you tapped them (reset per card)
   spoken: null,
 };
 
@@ -211,6 +213,7 @@ function setView(view) {
   state.view = view;
   state.revealed = false;
   state.shown += 1;
+  state.placed = [];
   render();
   window.scrollTo({ top: 0 });
 }
@@ -456,6 +459,7 @@ function renderReview(v) {
     if (ex.kind === "choice" || ex.kind === "article") card.append(choicePart(ex, null));
     else if (ex.kind === "recall") card.append(blankPart(ex, null));
     else if (ex.kind === "listen") card.append(listenPart(ex));
+    else if (ex.kind === "scramble") card.append(scramblePart(ex));
     else if (ex.kind === "flashcard") {
       card.append(h("div", { class: "reveal" },
         h("button", { class: "btn primary big wide", id: "show", onclick: reveal }, "Show answer")));
@@ -464,6 +468,7 @@ function renderReview(v) {
     // The front didn't say the word: hearing it is part of the answer.
     if (!frontIsTerm) autoSpeak(c.back.term, c.back.term_lang);
     if (ex.kind === "choice" || ex.kind === "article") card.append(choicePart(ex, res));
+    if (res && ex.kind === "scramble") card.append(scrambleResult(ex, res));
     if (res) card.append(verdict(res, ex));
     card.append(answer(c.back));
     if (res) card.append(h("div", { class: "muted", style: { marginTop: "1rem" } },
@@ -477,6 +482,7 @@ function renderReview(v) {
   }
 
   const keys = !answered && (ex.kind === "choice" || ex.kind === "article") ? [h("kbd", {}, "1"), "–", h("kbd", {}, String(ex.options.length)), " choose · "]
+    : !answered && ex.kind === "scramble" ? [h("kbd", {}, "Backspace"), " undo · ", h("kbd", {}, "Enter"), " check · "]
     : !answered && ex.kind === "listen" ? [h("kbd", {}, "Enter"), " check · ", h("kbd", {}, "Ctrl"), "+", h("kbd", {}, "Space"), " play again · "]
     : !answered && (ex.kind === "blank" || ex.kind === "recall") ? [h("kbd", {}, "Enter"), " check · "]
     : !answered ? [h("kbd", {}, "Space"), " show answer · "]
@@ -486,7 +492,7 @@ function renderReview(v) {
       h("div", { style: { width: `${pct}%` } })),
     h("div", { class: "caption" },
       h("span", {}, `${p.done} / ${p.total} words graded${p.repeats ? ` · ${p.repeats} repeat${p.repeats === 1 ? "" : "s"} queued` : ""}`),
-      h("span", {}, `${c.topic} · ${EXERCISE_LABELS[ex.kind]}${ex.kind === "blank" || ex.kind === "listen" ? "" : ` · ${c.direction_label}`}`)),
+      h("span", {}, `${c.topic} · ${EXERCISE_LABELS[ex.kind]}${["blank", "listen", "scramble"].includes(ex.kind) ? "" : ` · ${c.direction_label}`}`)),
     card,
     h("div", { class: "review-foot" },
       h("button", { class: "btn ghost", onclick: () => act("/api/session/skip"), title: "Next word, no change (S)" }, "Skip"),
@@ -556,10 +562,40 @@ function listenPart(ex) {
     h("div", { class: "reveal" }, h("button", { class: "btn primary big wide", onclick: () => check(input.value) }, "Check")));
 }
 
+// Sentence scramble: tap tiles into the line in order; tap a placed tile to put
+// it back. Only the order is sent to the server (service.check), as tile indices.
+function scramblePart(ex) {
+  const placed = state.placed;
+  const done = placed.length === ex.tiles.length;
+  const tile = (i, onclick) => h("button", { class: "tile-btn", dir: "auto", onclick }, ex.tiles[i]);
+  return h("div", { class: "scramble" },
+    h("div", { class: "blank-hint" }, txt("span", ex.hint, ex.hint_rtl)),
+    h("div", { class: `built${placed.length ? "" : " empty"}`, dir: ex.rtl ? "rtl" : "ltr" },
+      placed.length ? placed.map((i, k) => tile(i, () => { placed.splice(k, 1); render(); })) : "Tap the words in order",
+      done && ex.end ? h("span", { class: "end" }, ex.end) : null),
+    h("div", { class: "pool", dir: ex.rtl ? "rtl" : "ltr" },
+      ex.tiles.map((_, i) => placed.includes(i) ? h("span", { class: "tile-btn ghost" }, ex.tiles[i])
+        : tile(i, () => { placed.push(i); render(); }))),
+    h("div", { class: "reveal" }, h("button", { class: "btn primary big wide", disabled: !done,
+      onclick: () => check([...placed]) }, done ? "Check" : `${ex.tiles.length - placed.length} word${ex.tiles.length - placed.length === 1 ? "" : "s"} left`)));
+}
+
+function scrambleResult(ex, res) {
+  return h("div", { class: "blank" },
+    h("div", { class: "sentence", dir: ex.rtl ? "rtl" : "auto" }, h("mark", {}, res.expected)),
+    res.verdict !== "correct" ? h("div", { class: "blank-hint" }, "Yours: ", h("span", { dir: "auto" }, res.given)) : null);
+}
+
 function verdict(res, ex) {
   // One span inside .msg: .msg is a flex row and would put gaps between the bold parts.
   const box = (kind, ...parts) => h("div", { class: `msg ${kind} verdict` }, h("span", { class: "grow" }, ...parts));
   if (res.verdict === "correct") return box("ok", "✓ Correct");
+  // Before the spelling message: a scramble's "close" is about order, not spelling.
+  if (ex.kind === "scramble") {
+    // The sentence itself is shown above (scrambleResult); repeating it here would be noise.
+    return res.verdict === "close" ? box("warn", "≈ Almost: two neighbouring words are swapped.")
+      : box("err", "✗ Not quite: compare your order with the sentence above.");
+  }
   if (res.verdict === "close") {
     return box("warn", "≈ Almost: check the spelling. You wrote ", h("b", { dir: "auto" }, res.given),
       ex.kind === "blank" ? ", the sentence has " : ", the word is ", h("b", { dir: "auto" }, res.expected), ".");
@@ -630,7 +666,11 @@ document.addEventListener("keydown", (e) => {
   const ex = state.view.exercise;
   const res = state.view.result;
   const answered = state.revealed || !!res;
-  if (!answered && (ex.kind === "choice" || ex.kind === "article") && /^[1-9]$/.test(e.key) && Number(e.key) <= ex.options.length) {
+  if (!answered && ex.kind === "scramble" && (e.key === "Backspace" || e.key === "Enter")) {
+    e.preventDefault();
+    if (e.key === "Backspace" && state.placed.length) { state.placed.pop(); render(); }
+    if (e.key === "Enter" && state.placed.length === ex.tiles.length) check([...state.placed]);
+  } else if (!answered && (ex.kind === "choice" || ex.kind === "article") && /^[1-9]$/.test(e.key) && Number(e.key) <= ex.options.length) {
     e.preventDefault();
     check(Number(e.key) - 1);
   } else if (!answered && ex.kind === "flashcard" && (e.key === " " || e.key === "Enter")) {

@@ -189,3 +189,62 @@ def test_listen_needs_a_voice(cards):
 def test_listen_works_without_meaning(cards):
     assert ex.make_listen(replace(cards[0], meaning="")) is not None
     assert ex.make_recall(replace(cards[0], meaning="")) is None
+
+
+# --- sentence scramble -------------------------------------------------------
+
+@pytest.fixture
+def scr(cards):
+    """Build a scramble of `sentence` on an otherwise ordinary card."""
+    return lambda sentence, seed=0: ex.make_scramble(replace(cards[0], example_term=sentence), random.Random(seed))
+
+
+def test_scramble_shape(scr):
+    s = scr("Ich schreibe mit einem Stift.")
+    assert s.answer == ["Ich", "schreibe", "mit", "einem", "Stift"] and s.end == "."
+    assert sorted(s.tiles) == sorted(s.answer) and s.tiles != s.answer
+
+
+@pytest.mark.parametrize("sentence", [None, "Zu kurz hier.", " ".join(["Wort"] * 4) + ".", " ".join(f"w{i}" for i in range(17))])
+def test_scramble_not_possible(scr, sentence):
+    assert scr(sentence) is None    # missing, under 4 words, all identical, over 16 words
+
+
+def order_for(s, words):
+    """Tile indices that spell `words` (identical words: any matching tile)."""
+    left = list(range(len(s.tiles)))
+    out = []
+    for w in words:
+        i = next(i for i in left if s.tiles[i] == w)
+        left.remove(i)
+        out.append(i)
+    return out
+
+
+def test_scramble_check(scr):
+    s = scr("Die Milch ist im Kühlschrank.")
+    assert ex.check_scramble(s, order_for(s, s.answer)) == ex.CORRECT
+    swapped = ["Die", "Milch", "im", "ist", "Kühlschrank"]
+    assert ex.check_scramble(s, order_for(s, swapped)) == ex.CLOSE
+    assert ex.check_scramble(s, order_for(s, list(reversed(s.answer)))) == ex.WRONG
+    with pytest.raises(ValueError):
+        ex.check_scramble(s, [0, 0, 1, 2, 3])
+
+
+def test_scramble_duplicate_words_in_either_order(scr):
+    s = scr("the cat saw the dog")
+    first_the, second_the = [i for i, t in enumerate(s.tiles) if t == "the"]
+    rest = {t: i for i, t in enumerate(s.tiles) if t != "the"}
+    order = [second_the, rest["cat"], rest["saw"], first_the, rest["dog"]]
+    assert ex.check_scramble(s, order) == ex.CORRECT
+
+
+def test_scramble_in_session(cards):
+    s = session([card(cards, "Stift")], cards, "scramble")
+    e = s.current_exercise()
+    assert e.kind == "scramble"
+    res = s.check(order_for(e.scramble, e.scramble.answer))
+    assert res["verdict"] == ex.CORRECT and res["expected"] == "Ich schreibe mit einem Stift."
+    bad = session([card(cards, "Stift")], cards, "scramble")
+    with pytest.raises(ValueError):
+        bad.check("0 1 2")

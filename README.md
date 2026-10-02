@@ -105,6 +105,7 @@ Pick one under **Exercise** when you build a deck:
 | **Fill in the blank** | the word's example sentence with a gap, plus its meaning and the translated example as hints | type the missing word, **Enter** |
 | **Type the word** | the meaning and the word type | type the word, **Enter** (with or without its article: `die Kerze` and `Kerze` both count) |
 | **Listening** | nothing written: the word is spoken (🔊 *Play again*, 🐢 *Slow*, **Ctrl+Space**), with its word type as a hint | type what you heard, **Enter**. Needs a voice for the word's language ([Pronunciation](#pronunciation)); without one the option is greyed out |
+| **Sentence scramble** | the translated example, and the words of the example (column G) as shuffled tiles | tap the tiles in order (tap a placed one to put it back; **Backspace** undoes, **Enter** checks). Needs a sentence of 4–16 words, otherwise multiple choice |
 | **Article (der/die/das)** | a German noun | pick **der / die / das** (click or **1–3**). Only nouns whose column D is exactly der, die or das are in this deck; the option is greyed out for a workbook with none |
 | **Mixed** | any of the above, per card | |
 
@@ -115,11 +116,13 @@ is found even when inflected (`riesig` blanks *riesiges*) or written with placeh
 word itself, gets multiple choice instead.
 
 Typed answers ignore case, spacing and punctuation, and accept `ae`/`oe`/`ue`/`ss` for
-`ä`/`ö`/`ü`/`ß`. A missing accent or one typo counts as **almost**.
+`ä`/`ö`/`ü`/`ß`. A missing accent or one typo counts as **almost**; in the scramble, two
+neighbouring words swapped does. The scramble knows one right order, the one in your sentence:
+another order that is also correct German counts as wrong, so grade that yourself.
 
 **Grading stays yours.** After checking, the app proposes a grade (highlighted; **Enter**
-takes it): right → 4, almost → 3, wrong → 1. A wrong article proposes 2, not 1: knowing the
-word but not its gender is shaky, not forgotten. Press another number if you were lucky or it
+takes it): right → 4, almost → 3, wrong → 1. A wrong article or a wrong word order proposes
+2, not 1: those mistakes don't mean the word itself is forgotten. Press another number if you were lucky or it
 was effortless. The grade then updates confidence and FSRS exactly as for a flashcard.
 
 ### Pronunciation
@@ -313,7 +316,7 @@ flashcards/
   workbook.py             read topic sheets -> Cards (read-only), schedule included
   srs.py                  FSRS: grades -> due dates, the M-R cells, due status
   session.py              deck building and ReviewSession (first pass, repeats, grading)
-  exercises.py            the exercises (choice, blank, type the word, listening, article): building and checking
+  exercises.py            the exercises (choice, blank, type the word, listening, scramble, article)
   writeback.py            surgical cell writes into the .xlsx
   config.py               the workbook path and your deck preferences
   paths.py                where settings, backups and the review log live (~/.flashcards)
