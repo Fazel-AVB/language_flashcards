@@ -1,18 +1,25 @@
-"""Deck building: turn the full card list into an ordered review queue.
+"""Deck building and the review session: which cards, in what order, and what
+each grade does.
 
-Pure functions only -- no Streamlit, no I/O -- so the review logic is testable in
-isolation. The app layer owns session state (which card is showing, what's been
-graded); this module just decides *which cards* and *in what order*.
+No web framework and no file I/O here, so the whole review loop is testable in
+isolation: `build_deck` decides which cards and in what order, `ReviewSession`
+runs one session (first pass, repeats, grading) and produces the cell updates
+that writeback.apply_updates saves.
 """
 
 from __future__ import annotations
 
 import random
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, datetime, tzinfo
 
-from .models import CONFIDENCE_MAX, Card
+import fsrs
 
-MODES = ("topic", "mix", "difficult")
+from . import srs
+from .models import CONFIDENCE_COL, CONFIDENCE_MAX, Card, blend_confidence
+
+# "due": words FSRS says are due now (most forgotten first), then new words.
+MODES = ("due", "topic", "mix", "difficult")
 ORDERS = ("weighted", "lowest_confidence_first", "random", "oldest_first")
 
 # Direction is named by ROLE, not by language code: one app serves several
@@ -52,10 +59,16 @@ def build_deck(
     order: str = "weighted",
     seed: int | None = None,
     limit: int | None = None,
+    now: datetime | None = None,
+    local_tz: tzinfo | None = None,
 ) -> list[Card]:
     """Filter and order the cards for one review session.
 
     mode:
+      "due"       -> words whose FSRS schedule is due (lowest estimated recall
+                     first), then never-scheduled words in `order`; words
+                     scheduled for later are left out. Honours `topics` if given.
+                     Needs `now`.
       "topic"     -> only the sheets in `topics`
       "mix"       -> every topic
       "difficult" -> only cards with confidence <= difficult_threshold
@@ -75,7 +88,7 @@ def build_deck(
 
     selected = list(cards)
 
-    if topics and mode in ("topic", "difficult"):
+    if topics and mode in ("topic", "difficult", "due"):
         wanted = set(topics)
         selected = [c for c in selected if c.topic in wanted]
 
@@ -85,8 +98,24 @@ def build_deck(
             if c.confidence is not None and c.confidence <= difficult_threshold
         ]
 
-    ordered = _order(selected, order, seed)
+    if mode == "due":
+        if now is None:
+            raise ValueError("mode 'due' needs `now`")
+        ordered = _due_first(selected, order, seed, now, local_tz)
+    else:
+        ordered = _order(selected, order, seed)
     return ordered if limit is None else ordered[:limit]
+
+
+def _due_first(cards: list[Card], order: str, seed: int | None,
+               now: datetime, local_tz: tzinfo | None) -> list[Card]:
+    scheduler = srs.make_scheduler(fuzz=False)
+    due = [c for c in cards if srs.status(c.schedule, now, local_tz) == srs.DUE]
+    # Most forgotten first, so a session cut short by the limit still covers
+    # the words closest to being lost. Ties (e.g. same-minute learning steps) by due time.
+    due.sort(key=lambda c: (srs.retrievability(c.schedule, now, scheduler) or 0.0, c.schedule.due))
+    new = [c for c in cards if c.schedule is None]
+    return due + _order(new, order, seed)
 
 
 def _order(cards: list[Card], order: str, seed: int | None) -> list[Card]:
@@ -157,3 +186,190 @@ def pick_direction(pref: str, card_id: str, seed: int | None = None) -> str:
     # String seed: a tuple seed is deprecated (hashing-based) since Python 3.9.
     rng = random.Random(f"{seed}:{card_id}")
     return "term_to_native" if rng.random() < 0.5 else "native_to_term"
+
+
+# --------------------------------------------------------------------------- #
+# One review session
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class ReviewEntry:
+    """One grade given in the session, for the review log (service.write)."""
+
+    card_id: str
+    grade: int
+    reviewed_at: datetime
+    confidence_before: float | None
+    confidence_after: float
+    scheduled: bool          # False: an in-session repeat FSRS did not see
+    due_after: datetime | None
+
+
+@dataclass
+class ReviewSession:
+    """The state of one review session, from the first card to the summary.
+
+    Two phases, on purpose. Every drawn word is shown once (the first pass)
+    before any repeat, so capping the session at N words still means you *see*
+    all N; only then do repeats start, re-weighted on every pick.
+
+    Each grade updates the word's two scores (srs.py explains why there are
+    two) under different rules:
+
+    * Confidence: every grade, by averaging (models.blend_confidence). Repeats
+      compound on the session's own value, never the on-disk one -- averaging
+      against the file every time would make drilling a word a no-op.
+    * FSRS schedule: the word's first grade of the session, and after that
+      only grades given when FSRS itself has the word due again (a learning
+      step after "Again", minutes later). NOT every repeat: drilling a word
+      four times in a row is not four spaced recalls, and feeding FSRS four
+      same-day "Easy" reviews pushed a brand-new word a month out in testing.
+      The first grade counts even when the word was not due (topic/mix decks):
+      FSRS handles an early review by growing stability less.
+    """
+
+    deck: list[Card]
+    direction: str = "mixed"
+    repeat: bool = False
+    seed: int = 0
+    scheduler: fsrs.Scheduler = field(default_factory=srs.make_scheduler)
+
+    def __post_init__(self) -> None:
+        if not self.deck:
+            raise ValueError("cannot start a session with no cards")
+        if self.direction not in DIRECTIONS:
+            raise ValueError(f"unknown direction: {self.direction!r}")
+        self.cards: dict[str, Card] = {c.id: c for c in self.deck}
+        self.first_pass: list[str] = [c.id for c in self.deck]
+        self.pending: list[str] = []  # words still below 5, re-drilled after the first pass
+        self.draw = 0
+        self.current: str | None = self.deck[0].id
+        self.confidence: dict[str, float] = {}       # in-session confidence of graded words
+        self.schedules: dict[str, srs.Schedule] = {}  # in-session schedule of graded words
+        self.log: list[ReviewEntry] = []
+        # Previews use an unfuzzed copy: a button whose "next review" text
+        # changed between two looks would read as a bug. Real grades are fuzzed.
+        self._preview_scheduler = fsrs.Scheduler(
+            parameters=self.scheduler.parameters,
+            desired_retention=self.scheduler.desired_retention,
+            learning_steps=self.scheduler.learning_steps,
+            relearning_steps=self.scheduler.relearning_steps,
+            maximum_interval=self.scheduler.maximum_interval,
+            enable_fuzzing=False,
+        )
+
+    # --- reading -------------------------------------------------------------
+
+    @property
+    def finished(self) -> bool:
+        return self.current is None
+
+    @property
+    def current_card(self) -> Card | None:
+        return None if self.current is None else self.cards[self.current]
+
+    @property
+    def graded_ids(self) -> list[str]:
+        """Graded words in the order they were first graded."""
+        return list(dict.fromkeys(e.card_id for e in self.log))
+
+    def effective_confidence(self, card_id: str) -> float | None:
+        """The word's confidence as of now: the session's value once graded, else the file's."""
+        return self.confidence.get(card_id, self.cards[card_id].confidence)
+
+    def effective_schedule(self, card_id: str) -> srs.Schedule | None:
+        return self.schedules.get(card_id, self.cards[card_id].schedule)
+
+    def direction_for(self, card_id: str) -> str:
+        return pick_direction(self.direction, card_id, self.seed)
+
+    def counts_for_schedule(self, card_id: str, now: datetime) -> bool:
+        """Whether a grade now would update FSRS (see the class docstring)."""
+        if card_id not in self.schedules:
+            return True
+        return srs.status(self.schedules[card_id], now) == srs.DUE
+
+    def preview(self, card_id: str, grade: int, now: datetime) -> tuple[float, srs.Schedule | None]:
+        """What `grade` would set, shown on the grade buttons before pressing them.
+
+        The schedule is None when this grade would not reach FSRS.
+        """
+        confidence = blend_confidence(self.effective_confidence(card_id), grade)
+        if not self.counts_for_schedule(card_id, now):
+            return confidence, None
+        return confidence, srs.review(self.effective_schedule(card_id), grade, now, self._preview_scheduler)
+
+    # --- actions -------------------------------------------------------------
+
+    def grade(self, grade: int, now: datetime) -> None:
+        """Grade the current word 1-5 and move on."""
+        cid = self._require_current()
+        before = self.effective_confidence(cid)
+        new = blend_confidence(before, grade)  # validates 1..5
+        scheduled = self.counts_for_schedule(cid, now)
+        if scheduled:
+            self.schedules[cid] = srs.review(self.effective_schedule(cid), grade, now, self.scheduler)
+        self.confidence[cid] = new
+        due = self.schedules[cid].due if cid in self.schedules else None
+        self.log.append(ReviewEntry(cid, grade, now, before, new, scheduled, due))
+        # Mastery is the *stored* score, not the button pressed: after averaging,
+        # one press of 5 on a weak word lands below 5 and it should come round again.
+        self._advance(repeat_current=self.repeat and new < CONFIDENCE_MAX)
+
+    def skip(self) -> None:
+        """Move on without grading; a skipped repeat is done for this session."""
+        self._require_current()
+        self._advance(repeat_current=False)
+
+    def end(self) -> None:
+        self.current = None
+
+    # --- results -------------------------------------------------------------
+
+    def cell_updates(self) -> dict[tuple[str, int], dict[str, object]]:
+        """(sheet, row) -> {column: value} for writeback.apply_updates.
+
+        Confidence only where it actually changed (an average that lands back
+        on the file's value is not a change); the schedule for every word FSRS
+        reviewed, since any review moves it.
+        """
+        out: dict[tuple[str, int], dict[str, object]] = {}
+        for cid in self.graded_ids:
+            card = self.cards[cid]
+            cols: dict[str, object] = {}
+            if cid in self.schedules:
+                cols.update(srs.schedule_to_cells(self.schedules[cid]))
+            if self.confidence[cid] != card.confidence:
+                cols[CONFIDENCE_COL] = self.confidence[cid]
+            if cols:
+                out[(card.sheet, card.row)] = cols
+        return out
+
+    # --- internals -----------------------------------------------------------
+
+    def _require_current(self) -> str:
+        if self.current is None:
+            raise ValueError("the session has ended")
+        return self.current
+
+    def _advance(self, *, repeat_current: bool) -> None:
+        cid = self.current
+        if self.first_pass and self.first_pass[0] == cid:
+            self.first_pass.pop(0)
+        if repeat_current:
+            if cid not in self.pending:
+                self.pending.append(cid)
+        elif cid in self.pending:
+            self.pending.remove(cid)  # reached 5 (or was skipped): done for this session
+
+        if self.first_pass:
+            self.current = self.first_pass[0]
+            return
+        if self.pending:
+            # Re-weight on the session's current scores, not the on-disk ones: a
+            # word that just improved yields its turn to the words that did not.
+            self.draw += 1
+            scores = {i: self.effective_confidence(i) for i in self.pending}
+            self.current = pick_next_repeat(scores, exclude=cid, seed=self.seed, draw=self.draw)
+            return
+        self.current = None

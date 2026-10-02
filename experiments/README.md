@@ -1,6 +1,6 @@
 # Experiments — what the tool actually does
 
-Three executable notebooks that walk through the app end to end, with outputs already
+Four executable notebooks that walk through the app end to end, with outputs already
 committed so you can read them on GitHub without running anything.
 
 | notebook | question it answers |
@@ -8,11 +8,12 @@ committed so you can read them on GitHub without running anything.
 | [01 · Reading the workbook](01_reading_the_workbook.ipynb) | Which sheets count as vocabulary, how a row becomes a `Card`, how scores are normalised |
 | [02 · Choosing what to study](02_choosing_what_to_study.ipynb) | How a session's deck is drawn, why weak words dominate it, how repeats adapt as you improve |
 | [03 · Grading and writing back](03_grading_and_writeback.ipynb) | What a grade does to a score, a full simulated session through the app's own code, and how the result reaches your `.xlsx` without damaging it |
+| [04 · Spaced repetition](04_spaced_repetition.ipynb) | How a grade sets the next review date (FSRS), why in-session repeats don't count twice, what the "Due now" deck draws, and where the schedule is stored |
 
 ## Running them
 
 ```bash
-pip install -r ../requirements.txt
+python -m pip install -e "..[notebooks]"
 jupyter lab            # or: jupyter notebook
 ```
 
@@ -33,9 +34,9 @@ words.
 
 `_demo/` (including the backups the write-back makes) is gitignored.
 
-## Note on notebook 03
+## Note on notebooks 03 and 04
 
-It imports `app.py` and calls the real `_grade_current` / `_advance` rather than
-re-implementing the session loop, with `st.session_state` swapped for a plain dict. So the
-trace it prints is the app's own behaviour, not a description of it — if the loop changes,
-the notebook changes with it.
+They run `flashcards.session.ReviewSession`, the object the app's server holds for a
+session in progress, rather than re-implementing the loop. So the traces they print are
+the app's own behaviour, not a description of it: if the loop changes, the notebooks change
+with it. FSRS runs unfuzzed there, so the dates are the same on every run.

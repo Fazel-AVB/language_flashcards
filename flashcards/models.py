@@ -14,8 +14,11 @@ language pairs without a config entry per workbook -- see `language_pair_from_he
 and the schema table in README.md. Do not "improve" those headers into prose like
 "English Term / Expression": the text is displayed verbatim as the language name.
 
+Columns M..R hold the word's FSRS schedule (see srs.py). They are parsed by
+`workbook.load_cards`, not here, so a broken schedule can be reported per row.
+
 Downstream: `Card.sheet` + `Card.row` are the write-back address used by
-`writeback.apply_confidence_updates`. Do not derive the row from list order --
+`writeback.apply_updates`. Do not derive the row from list order --
 filtered/blank rows would shift it.
 """
 
@@ -25,6 +28,8 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
+
+from .srs import Schedule
 
 # Column order on every topic sheet, A..L. Position is the contract; see module docstring.
 # `term` is the word being learned (column A), `meaning` its native-language gloss (B).
@@ -118,6 +123,8 @@ class Card:
 
     article_label: str  # this sheet's real header for column D, for UI captions
     forms_label: str    # this sheet's real header for column E
+
+    schedule: Schedule | None = None  # FSRS state from columns M..R; None = never scheduled
 
     @property
     def id(self) -> str:

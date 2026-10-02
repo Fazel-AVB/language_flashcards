@@ -8,12 +8,13 @@ sheet, so this module works unchanged for German/English, English/Persian, or an
 other pair. `WorkbookData.languages` is the pair the UI labels itself with.
 
 Downstream: `WorkbookData.mtime` is captured here and re-checked by
-`writeback.apply_confidence_updates` -- if the file changed on disk between load
+`writeback.apply_updates` -- if the file changed on disk between load
 and save, the write is refused so a hand edit in Excel is never clobbered.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -28,6 +29,7 @@ from .models import (
     language_pair_from_header,
     parse_row,
 )
+from .srs import SRS_COLUMNS, SRS_FIRST_COL_INDEX, SRS_HEADERS, SRS_LAST_COL_INDEX, schedule_from_cells
 
 
 class WorkbookError(RuntimeError):
@@ -55,6 +57,12 @@ class WorkbookData:
     # mixed workbook still reviews correctly, it just cannot be labelled with one
     # pair in the sidebar.
     language_conflicts: list[str] = field(default_factory=list)
+    # "Sheet!M7: reason" for every row whose schedule columns could not be read.
+    # Such a word is treated as new; listed so a broken hand edit is visible.
+    schedule_problems: list[str] = field(default_factory=list)
+    # Sheets whose M1..R1 do not yet carry the schedule headers. Write-back adds
+    # them, so the first save that schedules a word also labels the columns.
+    sheets_missing_srs_headers: list[str] = field(default_factory=list)
 
     def stats(self, difficult_threshold: int) -> list[TopicStat]:
         out: list[TopicStat] = []
@@ -99,6 +107,8 @@ def load_cards(path: str) -> WorkbookData:
     cards: list[Card] = []
     topics: list[str] = []
     pairs: dict[str, LanguagePair] = {}
+    problems: list[str] = []
+    missing_headers: list[str] = []
     try:
         for name in wb.sheetnames:
             ws = wb[name]
@@ -111,16 +121,26 @@ def load_cards(path: str) -> WorkbookData:
                 continue
 
             topics.append(name)
+            srs_header = (list(header) + [None] * SRS_LAST_COL_INDEX)[SRS_FIRST_COL_INDEX - 1:SRS_LAST_COL_INDEX]
+            if [str(h or "").strip() for h in srs_header] != [SRS_HEADERS[c] for c in SRS_COLUMNS]:
+                missing_headers.append(name)
             header = header[:CONFIDENCE_COL_INDEX]
             languages = language_pair_from_header(header)
             pairs[name] = languages
             # openpyxl is 1-based; row 1 is the header, data starts at row 2.
             for offset, values in enumerate(rows, start=2):
+                values = list(values)
                 card = parse_row(
-                    name, header, list(values)[:CONFIDENCE_COL_INDEX], offset, languages
+                    name, header, values[:CONFIDENCE_COL_INDEX], offset, languages
                 )
-                if card is not None:
-                    cards.append(card)
+                if card is None:
+                    continue
+                try:
+                    schedule = schedule_from_cells(values[SRS_FIRST_COL_INDEX - 1:SRS_LAST_COL_INDEX])
+                except (ValueError, TypeError) as exc:
+                    problems.append(f"{name}!M{offset}: {exc}")
+                    schedule = None
+                cards.append(dataclasses.replace(card, schedule=schedule))
     finally:
         wb.close()
 
@@ -143,6 +163,8 @@ def load_cards(path: str) -> WorkbookData:
         languages=primary,
         topics=topics,
         language_conflicts=conflicts,
+        schedule_problems=problems,
+        sheets_missing_srs_headers=missing_headers,
     )
 
 

@@ -1,8 +1,13 @@
+# Settings and backups from versions before 0.2 (now in ~/.flashcards); never commit them.
 config.json
 backups/
+# Your own workbook, if you keep it in the clone.
 data/
 experiments/_demo/
 __pycache__/
 *.pyc
+.venv/
+*.egg-info/
+build/
 .pytest_cache/
 .streamlit/

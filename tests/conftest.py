@@ -26,6 +26,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+
+@pytest.fixture(autouse=True)
+def fc_home(tmp_path, monkeypatch) -> Path:
+    """Point the app's data folder (config.json, backups, review log) at a temp dir.
+
+    Autouse, so no test can read or overwrite the real ~/.flashcards.
+    """
+    home = tmp_path / "fc_home"
+    monkeypatch.setenv("FLASHCARDS_HOME", str(home))
+    return home
+
 # A1/B1 hold the bare language names; that is how the app learns the pair.
 STD_HEADERS = [
     "German", "English", "Word type", "Article", "Plural", "Pronunciation",

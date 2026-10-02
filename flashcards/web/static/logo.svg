@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Flashcards">
+<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#14b8a6"/><stop offset="1" stop-color="#0f766e"/>
+</linearGradient></defs>
+<rect width="256" height="256" rx="56" fill="url(#g)"/>
+<rect x="52" y="76" width="152" height="112" rx="14" fill="#fff" fill-opacity="0.55" transform="rotate(-14 128 128) translate(10 -6)"/>
+<rect x="52" y="76" width="152" height="112" rx="14" fill="#fff"/>
+<line x1="80" y1="116" x2="150" y2="116" stroke="#0f766e" stroke-width="16" stroke-linecap="round"/><line x1="80" y1="152" x2="176" y2="152" stroke="#0f766e" stroke-width="10" stroke-linecap="round"/>
+</svg>

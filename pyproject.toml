@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "language-flashcards"
+# 0.1 was the Streamlit app (unversioned); 0.2 is the installable Flask app with FSRS.
+version = "0.2.0"
+description = "Review an Excel vocabulary workbook with spaced repetition (FSRS), in your browser, entirely on your computer"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=3.0",      # the local web page (flashcards/web)
+    "openpyxl>=3.1",   # reading the workbook (writing is done by hand, see writeback.py)
+    # FSRS scheduler. Pinned to the 6.x API (Scheduler / Card / Rating /
+    # review_card / get_card_retrievability) that srs.py is written against.
+    "fsrs>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+# The walkthrough notebooks in experiments/.
+notebooks = ["pandas>=2.0", "matplotlib>=3.7", "notebook>=7.0"]
+
+[project.scripts]
+flashcards = "flashcards.cli:main"
+
+[project.gui-scripts]
+# On Windows, pip turns this into .venv\Scripts\flashcards-gui.exe, which
+# starts without a console window: the thing the desktop shortcut points at.
+flashcards-gui = "flashcards.web.launcher:main"
+
+[tool.setuptools]
+packages = ["flashcards", "flashcards.web"]
+
+[tool.setuptools.package-data]
+# The page and the icons; served from inside the package.
+"flashcards.web" = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

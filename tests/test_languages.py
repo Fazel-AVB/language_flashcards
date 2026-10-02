@@ -147,9 +147,8 @@ def test_writeback_into_en_fa_workbook(en_fa_workbook_path, tmp_path):
     [("de_en", "term_to_native"), ("en_de", "native_to_term"),
      ("mixed", "mixed"), ("term_to_native", "term_to_native")],
 )
-def test_legacy_direction_is_migrated(tmp_path, monkeypatch, stored, expected):
+def test_legacy_direction_is_migrated(fc_home, stored, expected):
     """A config.json from the German-only version must not break the first launch."""
-    cfg = tmp_path / "config.json"
-    cfg.write_text(json.dumps({"reference_path": None, "prefs": {"direction": stored}}))
-    monkeypatch.setattr(config, "CONFIG_PATH", cfg)
+    fc_home.mkdir(parents=True, exist_ok=True)
+    (fc_home / "config.json").write_text(json.dumps({"reference_path": None, "prefs": {"direction": stored}}))
     assert config.load_config()["prefs"]["direction"] == expected

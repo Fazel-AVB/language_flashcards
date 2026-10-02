@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flashcards</title>
+  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Replaced by the server on every launch (app.py, TOKEN_PLACEHOLDER); app.js sends it with each request. -->
+  <meta name="fc-token" content="__FC_TOKEN__">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="/static/logo.svg" alt="" class="logo">
+      <span id="brand-name">Flashcards</span>
+      <span id="pair" class="chip" hidden></span>
+    </div>
+    <button id="quit" class="btn ghost small" title="Stop the app (it also stops by itself 10 minutes after you close this tab)">Quit</button>
+  </header>
+
+  <main>
+    <div id="flash" aria-live="polite"></div>
+    <section id="view"></section>
+  </main>
+
+  <footer id="footer"></footer>
+
+  <div id="stopped" class="overlay" hidden>
+    <div class="overlay-box">
+      <img src="/static/logo.svg" alt="" class="logo big">
+      <h2>Flashcards has stopped</h2>
+      <p>Saved grades are in your workbook. Double-click the Flashcards icon to start it again, then close this tab.</p>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
