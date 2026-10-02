@@ -30,6 +30,7 @@ const EXERCISE_LABELS = {
   listen: "Listening",
   scramble: "Sentence scramble",
   article: "Article (der/die/das)",
+  forms: "Forms (plural, past)",
   mixed: "Mixed",
 };
 const ORDER_LABELS = {
@@ -330,9 +331,11 @@ function deckForm(o) {
         Object.entries(EXERCISE_LABELS).map(([k, v]) => {
           // Article: only with der/die/das nouns (service.overview article_words).
           // Listening: only with a voice for the word's language.
+          // Forms: only with plurals / verb forms in column E (service.overview forms_words).
           const noVoice = k === "listen" && !voiceFor(o.language_codes?.term);
-          return h("option", { value: k, selected: f.exercise === k, disabled: (k === "article" && !o.article_words) || noVoice },
-            k === "article" && o.article_words ? `${v} · ${o.article_words} nouns` : noVoice ? `${v} (no ${o.languages.term} voice)` : v);
+          const count = { article: [o.article_words, "nouns"], forms: [o.forms_words, "words"] }[k];
+          return h("option", { value: k, selected: f.exercise === k, disabled: (count && !count[0]) || noVoice },
+            count && count[0] ? `${v} · ${count[0]} ${count[1]}` : noVoice ? `${v} (no ${o.languages.term} voice)` : v);
         }))),
     h("label", { class: "field" }, "Order",
       h("select", { title: f.mode === "due" ? "Due words always come most-forgotten first; this orders the new words after them" : null,
@@ -460,6 +463,7 @@ function renderReview(v) {
     else if (ex.kind === "recall") card.append(blankPart(ex, null));
     else if (ex.kind === "listen") card.append(listenPart(ex));
     else if (ex.kind === "scramble") card.append(scramblePart(ex));
+    else if (ex.kind === "forms") card.append(formsPart(ex));
     else if (ex.kind === "flashcard") {
       card.append(h("div", { class: "reveal" },
         h("button", { class: "btn primary big wide", id: "show", onclick: reveal }, "Show answer")));
@@ -484,7 +488,7 @@ function renderReview(v) {
   const keys = !answered && (ex.kind === "choice" || ex.kind === "article") ? [h("kbd", {}, "1"), "–", h("kbd", {}, String(ex.options.length)), " choose · "]
     : !answered && ex.kind === "scramble" ? [h("kbd", {}, "Backspace"), " undo · ", h("kbd", {}, "Enter"), " check · "]
     : !answered && ex.kind === "listen" ? [h("kbd", {}, "Enter"), " check · ", h("kbd", {}, "Ctrl"), "+", h("kbd", {}, "Space"), " play again · "]
-    : !answered && (ex.kind === "blank" || ex.kind === "recall") ? [h("kbd", {}, "Enter"), " check · "]
+    : !answered && (ex.kind === "blank" || ex.kind === "recall" || ex.kind === "forms") ? [h("kbd", {}, "Enter"), " check · "]
     : !answered ? [h("kbd", {}, "Space"), " show answer · "]
     : [h("kbd", {}, "1"), "–", h("kbd", {}, "5"), " grade · "];
   return h("div", {},
@@ -492,7 +496,7 @@ function renderReview(v) {
       h("div", { style: { width: `${pct}%` } })),
     h("div", { class: "caption" },
       h("span", {}, `${p.done} / ${p.total} words graded${p.repeats ? ` · ${p.repeats} repeat${p.repeats === 1 ? "" : "s"} queued` : ""}`),
-      h("span", {}, `${c.topic} · ${EXERCISE_LABELS[ex.kind]}${["blank", "listen", "scramble"].includes(ex.kind) ? "" : ` · ${c.direction_label}`}`)),
+      h("span", {}, `${c.topic} · ${EXERCISE_LABELS[ex.kind]}${["blank", "listen", "scramble", "forms"].includes(ex.kind) ? "" : ` · ${c.direction_label}`}`)),
     card,
     h("div", { class: "review-foot" },
       h("button", { class: "btn ghost", onclick: () => act("/api/session/skip"), title: "Next word, no change (S)" }, "Skip"),
@@ -580,6 +584,18 @@ function scramblePart(ex) {
       onclick: () => check([...placed]) }, done ? "Check" : `${ex.tiles.length - placed.length} word${ex.tiles.length - placed.length === 1 ? "" : "s"} left`)));
 }
 
+// Forms drill: "der Stift → Plural", type the form.
+function formsPart(ex) {
+  const input = h("input", { type: "text", class: "gap", autocomplete: "off", autocapitalize: "off", spellcheck: false,
+    "aria-label": ex.label, size: Math.max(8, Math.min(28, ex.answer_len || 10)),
+    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); check(input.value); } } });
+  setTimeout(() => input.focus(), 0);
+  return h("div", { class: "blank" },
+    h("div", { class: "forms-ask" }, txt("span", ex.prompt, ex.rtl), " → ", h("b", {}, ex.label)),
+    h("div", { class: "sentence" }, input),
+    h("div", { class: "reveal" }, h("button", { class: "btn primary big wide", onclick: () => check(input.value) }, "Check")));
+}
+
 function scrambleResult(ex, res) {
   return h("div", { class: "blank" },
     h("div", { class: "sentence", dir: ex.rtl ? "rtl" : "auto" }, h("mark", {}, res.expected)),
@@ -595,6 +611,11 @@ function verdict(res, ex) {
     // The sentence itself is shown above (scrambleResult); repeating it here would be noise.
     return res.verdict === "close" ? box("warn", "≈ Almost: two neighbouring words are swapped.")
       : box("err", "✗ Not quite: compare your order with the sentence above.");
+  }
+  if (res.verdict === "close" && ex.kind === "forms") {
+    // The only "close" in the forms drill: the participle without hat/ist (exercises.check_forms).
+    return box("warn", "≈ Almost. You wrote ", h("b", { dir: "auto" }, res.given), ", the form is ",
+      h("b", { dir: "auto" }, res.expected), ".");
   }
   if (res.verdict === "close") {
     return box("warn", "≈ Almost: check the spelling. You wrote ", h("b", { dir: "auto" }, res.given),

@@ -32,12 +32,13 @@ DIRECTIONS = ("mixed", "term_to_native", "native_to_term")
 # among those the card supports; a card that can't do the chosen kind (no
 # example sentence containing the word, nothing to build distractors from)
 # falls back: blank -> choice -> flashcard. "article" decks contain only
-# der/die/das nouns (service.Service._build filters them), so it never falls back.
-EXERCISES = ("flashcard", "choice", "blank", "recall", "listen", "scramble", "article", "mixed")
+# der/die/das nouns, "forms" decks only words with a drillable column E
+# (service.Service._build filters both), so they never fall back.
+EXERCISES = ("flashcard", "choice", "blank", "recall", "listen", "scramble", "article", "forms", "mixed")
 # What each choice falls back to, in order; "flashcard" is always possible.
 _FALLBACK = {"choice": ("choice",), "blank": ("blank", "choice"), "recall": ("recall",),
              "listen": ("listen", "recall"), "scramble": ("scramble", "choice"),
-             "article": ("article", "choice")}
+             "article": ("article", "choice"), "forms": ("forms", "choice")}
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class Exercise:
     choice: exercises.Choice | None = None  # choice and article
     blank: exercises.Blank | None = None    # blank, recall and listen
     scramble: exercises.Scramble | None = None
+    forms: exercises.Forms | None = None
 
 # Sampling weight = (5.5 - score) ** 2, so score 1 is 81x likelier to be drawn
 # than score 5, and an ungraded word outranks everything.
@@ -353,6 +355,8 @@ class ReviewSession:
                 made["listen"] = Exercise("listen", blank=listen)
             if "scramble" in wanted and (scramble := exercises.make_scramble(card, rng)):
                 made["scramble"] = Exercise("scramble", scramble=scramble)
+            if "forms" in wanted and (forms := exercises.make_forms(card)):
+                made["forms"] = Exercise("forms", forms=forms)
             if "article" in wanted and (article := exercises.make_article(card)):
                 made["article"] = Exercise("article", choice=article)
             if "choice" in wanted and (choice := exercises.make_choice(card, self.pool, self.direction_for(cid), rng)):
@@ -387,6 +391,10 @@ class ReviewSession:
             self.result = {"verdict": verdict, "order": answer,
                            "given": " ".join(ex.scramble.tiles[i] for i in answer) + ex.scramble.end,
                            "expected": " ".join(ex.scramble.answer) + ex.scramble.end}
+        elif ex.kind == "forms":
+            given = "" if answer is None else str(answer)
+            verdict = exercises.check_forms(given, ex.forms)
+            self.result = {"verdict": verdict, "given": given, "expected": ex.forms.answer}
         elif ex.kind in ("blank", "recall", "listen"):
             given = "" if answer is None else str(answer)
             verdict = exercises.check_typed(given, ex.blank)

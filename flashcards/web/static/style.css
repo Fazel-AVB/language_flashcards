@@ -179,6 +179,8 @@ input.gap { display: inline-block; width: auto; min-width: 6ch; font-size: 1.2re
 .blank-hint { text-align: center; color: var(--muted); margin-top: .3rem; }
 .blank-hint.it { font-style: italic; font-size: .92rem; }
 .verdict { margin-top: 1rem; }
+.forms-ask { text-align: center; color: var(--muted); font-size: 1.05rem; margin: .4rem 0 .2rem; }
+.forms-ask b { color: var(--primary-dark); }
 .scramble .built {
   min-height: 3.4rem; margin: 1rem 0 .8rem; padding: .5rem; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center;
   border-bottom: 2px solid var(--primary); background: var(--primary-soft); border-radius: 8px 8px 0 0;

@@ -106,6 +106,7 @@ Pick one under **Exercise** when you build a deck:
 | **Type the word** | the meaning and the word type | type the word, **Enter** (with or without its article: `die Kerze` and `Kerze` both count) |
 | **Listening** | nothing written: the word is spoken (🔊 *Play again*, 🐢 *Slow*, **Ctrl+Space**), with its word type as a hint | type what you heard, **Enter**. Needs a voice for the word's language ([Pronunciation](#pronunciation)); without one the option is greyed out |
 | **Sentence scramble** | the translated example, and the words of the example (column G) as shuffled tiles | tap the tiles in order (tap a placed one to put it back; **Backspace** undoes, **Enter** checks). Needs a sentence of 4–16 words, otherwise multiple choice |
+| **Forms (plural, past)** | the word and the form asked for: *der Stift → Plural*, *reden → Perfekt*, *uphold → Past participle* | type the form, **Enter**. Strict: see below |
 | **Article (der/die/das)** | a German noun | pick **der / die / das** (click or **1–3**). Only nouns whose column D is exactly der, die or das are in this deck; the option is greyed out for a workbook with none |
 | **Mixed** | any of the above, per card | |
 
@@ -120,8 +121,17 @@ Typed answers ignore case, spacing and punctuation, and accept `ae`/`oe`/`ue`/`s
 neighbouring words swapped does. The scramble knows one right order, the one in your sentence:
 another order that is also correct German counts as wrong, so grade that yourself.
 
+The **forms drill** reads column E. Nouns (column C starting with *Noun*) are asked for the
+plural (`die Stifte`; `Stifte` alone is fine too). Verbs with three forms
+(`redet – redete – hat geredet`) are asked for the German *Perfekt* with its auxiliary, or the
+English past participle (`leaned/leant`: either). Notes like `— (no plural)`, cells with `;` or
+brackets, and adjectives are left out, and only drillable words are in the deck. Unlike the
+other typed exercises it has **no typo leniency**: *Stiften* for *Stifte* or *Vater* for
+*Väter* is exactly the mistake being drilled, so it counts as wrong. The one "almost" is the
+right participle without *hat*/*ist*.
+
 **Grading stays yours.** After checking, the app proposes a grade (highlighted; **Enter**
-takes it): right → 4, almost → 3, wrong → 1. A wrong article or a wrong word order proposes
+takes it): right → 4, almost → 3, wrong → 1. A wrong article, form or word order proposes
 2, not 1: those mistakes don't mean the word itself is forgotten. Press another number if you were lucky or it
 was effortless. The grade then updates confidence and FSRS exactly as for a flashcard.
 
@@ -316,7 +326,7 @@ flashcards/
   workbook.py             read topic sheets -> Cards (read-only), schedule included
   srs.py                  FSRS: grades -> due dates, the M-R cells, due status
   session.py              deck building and ReviewSession (first pass, repeats, grading)
-  exercises.py            the exercises (choice, blank, type the word, listening, scramble, article)
+  exercises.py            the exercises (choice, blank, type the word, listening, scramble, article, forms)
   writeback.py            surgical cell writes into the .xlsx
   config.py               the workbook path and your deck preferences
   paths.py                where settings, backups and the review log live (~/.flashcards)

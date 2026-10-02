@@ -194,3 +194,12 @@ def test_scramble_view_and_check(svc):
         svc.check([0])
     result = svc.check(list(range(len(ex["tiles"]))))["result"]
     assert result["suggested"] in (2, 3, 4) and result["expected"].endswith((".", "!", "?"))
+
+
+def test_forms_deck_only_drillable_words(svc):
+    # Fixture: Stift, Bericht (nouns with plurals) and werden ("ist geworden") qualify; riesig is an adjective.
+    assert svc.overview()["forms_words"] == 3
+    view = svc.start({"mode": "topic", "topics": ["Verbs"], "exercise": "forms"})
+    ex = view["exercise"]
+    assert ex["kind"] == "forms" and ex["label"].startswith("Perfekt") and ex["prompt"] == "werden"
+    assert svc.check("geworden")["result"]["verdict"] == "close"

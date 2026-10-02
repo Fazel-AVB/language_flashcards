@@ -248,3 +248,51 @@ def test_scramble_in_session(cards):
     bad = session([card(cards, "Stift")], cards, "scramble")
     with pytest.raises(ValueError):
         bad.check("0 1 2")
+
+
+# --- forms drill -------------------------------------------------------------
+
+def forms_card(cards, **kw):
+    return replace(cards[0], **kw)
+
+
+def test_forms_noun_plural(cards):
+    f = ex.make_forms(forms_card(cards, word_type="Noun", forms="die Stifte"))
+    assert f.label == "Plural" and f.answer == "die Stifte"
+    assert ex.check_forms("Stifte", f) == ex.CORRECT
+    assert ex.check_forms("die Stifte", f) == ex.CORRECT
+    assert ex.check_forms(" STIFTE ", f) == ex.CORRECT       # case and spacing don't matter
+    # No typo leniency: a one-letter difference is the wrong plural ending.
+    assert ex.check_forms("die Stiften", f) == ex.WRONG
+    assert ex.check_forms("Stifts", f) == ex.WRONG
+    assert ex.check_forms("", f) == ex.WRONG
+    umlaut = ex.make_forms(forms_card(cards, word_type="Noun", forms="die Väter"))
+    assert ex.check_forms("Vaeter", umlaut) == ex.CORRECT     # ae for ä is a spelling, not a mistake
+    assert ex.check_forms("Vater", umlaut) == ex.WRONG        # the missing umlaut IS the mistake
+
+
+def test_forms_german_perfect_needs_the_auxiliary(cards):
+    f = ex.make_forms(forms_card(cards, word_type="Verb (regular, weak)", forms="redet – redete – hat geredet"))
+    assert f.label.startswith("Perfekt") and f.answer == "hat geredet"
+    assert ex.check_forms("hat geredet", f) == ex.CORRECT
+    assert ex.check_forms("er hat geredet", f) == ex.CORRECT
+    assert ex.check_forms("geredet", f) == ex.CLOSE          # auxiliary missing
+    assert ex.check_forms("ist geredet", f) == ex.WRONG       # wrong auxiliary: the point of the drill
+
+
+def test_forms_english(en_fa_workbook_path):
+    base = load_cards(str(en_fa_workbook_path)).cards[0]
+    plural = ex.make_forms(replace(base, word_type="Noun", forms="charms"))
+    assert plural.label == "Plural" and ex.check_forms("charms", plural) == ex.CORRECT
+    verb = ex.make_forms(replace(base, word_type="Verb phrase", forms="lean – leaned/leant – leaned/leant"))
+    assert verb.label == "Past participle"
+    assert ex.check_forms("leant", verb) == ex.CORRECT and ex.check_forms("leaned", verb) == ex.CORRECT
+
+
+@pytest.mark.parametrize("word_type,forms", [
+    ("Noun", "— (no plural)"), ("Noun", "— (uncountable)"), ("Noun", "nur Plural"),
+    ("Noun / Verb", "reprieves; reprieve – reprieved"), ("Adjective / Adverb", "riesiger – am riesigsten"),
+    ("Verb", "geht – ging"), ("Verb", "redet – redete – geredet"), (None, "die Stifte"), ("Noun", None),
+])
+def test_forms_skipped(cards, word_type, forms):
+    assert ex.make_forms(forms_card(cards, word_type=word_type, forms=forms)) is None

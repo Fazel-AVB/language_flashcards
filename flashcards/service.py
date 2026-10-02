@@ -105,6 +105,7 @@ class Service:
                             "native": language_code(data.languages.native)},
             words=len(data.cards),
             article_words=sum(1 for c in data.cards if exercises.article_of(c)),
+            forms_words=sum(1 for c in data.cards if exercises.make_forms(c)),
             topics=topics,
             due=sum(s == srs.DUE for s in status.values()),
             new=sum(s == srs.NEW for s in status.values()),
@@ -176,10 +177,12 @@ class Service:
 
     def _build(self, data: WorkbookData, opts: dict, *, seed: int, limit: int | None) -> list[Card]:
         cards = data.cards
+        # Only words the drill can ask about; filtering here (not falling back per
+        # card) makes "N words in scope" count what you'll get.
         if opts["exercise"] == "article":
-            # Only nouns with a plain der/die/das can be drilled; filtering here (not
-            # falling back per card) makes "N words in scope" count what you'll get.
             cards = [c for c in cards if exercises.article_of(c)]
+        elif opts["exercise"] == "forms":
+            cards = [c for c in cards if exercises.make_forms(c)]
         return build_deck(
             cards, mode=opts["mode"], topics=opts["topics"],
             difficult_threshold=opts["threshold"], order=opts["order"],
@@ -295,7 +298,7 @@ class Service:
         direction = s.direction_for(card.id)
         # Some exercises fix the side you see: the article drill shows the noun,
         # typing the word shows its meaning.
-        direction = {"article": "term_to_native", "recall": "native_to_term",
+        direction = {"article": "term_to_native", "forms": "term_to_native", "recall": "native_to_term",
                      "listen": "term_to_native"}.get(ex.kind, direction)
         pair = card.languages
         if direction == "term_to_native":
@@ -331,6 +334,11 @@ class Service:
             native = ex.choice.answer_side == "native"
             lang_name = pair.native if native else pair.term
             exercise.update(options=ex.choice.options, rtl=is_rtl(lang_name), lang=language_code(lang_name))
+        if ex.forms:
+            # The noun with its article ("der Stift") says which plural is meant.
+            article = exercises.article_of(card)
+            exercise.update(label=ex.forms.label, prompt=f"{article} {card.term}" if article else card.term,
+                            answer_len=len(ex.forms.answer), rtl=is_rtl(pair.term), lang=language_code(pair.term))
         if ex.scramble:
             exercise.update(tiles=ex.scramble.tiles, end=ex.scramble.end, rtl=is_rtl(pair.term),
                             lang=language_code(pair.term), hint=card.example_meaning or card.meaning,

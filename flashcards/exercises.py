@@ -1,6 +1,6 @@
 """Exercises built from the workbook itself: multiple choice, fill in the blank,
-type the word (recall), listening (dictation), sentence scramble and the
-German article drill.
+type the word (recall), listening (dictation), sentence scramble, the German
+article drill and the forms drill (plurals, verb past forms).
 
 An exercise only changes *how you answer* a card. After it is checked, the
 app proposes a grade (SUGGESTED_GRADE) and you confirm or override it with
@@ -18,9 +18,9 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from .models import Card
+from .models import Card, language_code
 
-KINDS = ("flashcard", "choice", "blank", "recall", "listen", "scramble", "article")
+KINDS = ("flashcard", "choice", "blank", "recall", "listen", "scramble", "article", "forms")
 ARTICLES = ("der", "die", "das")
 CORRECT, CLOSE, WRONG = "correct", "close", "wrong"
 
@@ -39,6 +39,8 @@ SUGGESTED_GRADE = {
     # 2 ("shaky") keeps it coming back soon without resetting it like 1 would;
     # press 1 yourself if the word meant nothing to you.
     ("article", CORRECT): 4, ("article", WRONG): 2,
+    # A wrong plural or perfect is a grammar slip, not a forgotten word (as for articles).
+    ("forms", CORRECT): 4, ("forms", CLOSE): 3, ("forms", WRONG): 2,
 }
 
 N_OPTIONS = 4
@@ -164,6 +166,89 @@ def check_scramble(scramble: Scramble, order: list[int]) -> str:
             and built[diff[1]] == scramble.answer[diff[0]]:
         return CLOSE
     return WRONG
+
+
+# --------------------------------------------------------------------------- #
+# Forms drill: noun plurals and verb past forms, from column E
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class Forms:
+    """Produce one grammatical form of the word."""
+
+    label: str                 # what is asked: "Plural", "Perfekt (er/sie/es …)", "Past participle"
+    answer: str                # as written in column E, e.g. "die Stifte", "hat geredet"
+    accepted: tuple[str, ...]  # also correct: "Stifte", "er hat geredet", "leant"
+    partial: tuple[str, ...]   # "close": the right participle without hat/ist
+
+
+# Column E separates verb forms with a spaced en dash: "redet – redete – hat geredet".
+# Spaced only, so a hyphenated word ("well-known") is never split.
+_FORM_SEP = re.compile(r"\s+[–—]\s+")
+_GERMAN_PRONOUNS = ("er", "sie", "es")
+
+
+def make_forms(card: Card) -> Forms | None:
+    """A plural question for nouns, a past-form question for verbs, else None.
+
+    Decided by the word type in column C ("Noun...", "Verb..."); a cell that is
+    a dash note ("— (no plural)"), mixes several entries ("reprieves; reprieve –
+    reprieved") or carries a remark in brackets is skipped rather than guessed at.
+    Adjectives (comparative/superlative) are not drilled yet.
+    """
+    cell = (card.forms or "").strip()
+    word_type = (card.word_type or "").strip().lower()
+    if not cell or cell.startswith(("—", "-", "–")) or ";" in cell or "(" in cell:
+        return None
+    german = language_code(card.languages.term) == "de"
+    parts = _FORM_SEP.split(cell)
+
+    if word_type.startswith("noun") and len(parts) == 1:
+        if german and cell.lower() in ("nur plural", "kein plural"):
+            return None
+        accepted = _alternatives(cell)
+        # "die Stifte": the plural without its article is right too.
+        bare = tuple(a.split(" ", 1)[1] for a in accepted if a.split(" ", 1)[0].lower() in ARTICLES and " " in a)
+        return Forms(label="Plural", answer=cell, accepted=_unique(accepted + bare, cell), partial=())
+
+    if word_type.startswith("verb") and len(parts) == 3:
+        third = parts[2].strip()
+        if german:
+            # "hat geredet": the perfect with its auxiliary, the part learners get wrong.
+            aux, _, participle = third.partition(" ")
+            if aux.lower() not in ("hat", "ist") or not participle:
+                return None
+            accepted = tuple(f"{p} {third}" for p in _GERMAN_PRONOUNS)
+            return Forms(label="Perfekt (er/sie/es …)", answer=third, accepted=_unique(accepted, third),
+                         partial=(participle,))
+        alternatives = _alternatives(third)
+        return Forms(label="Past participle", answer=third, accepted=_unique(alternatives, third), partial=())
+    return None
+
+
+def check_forms(given: str, forms: Forms) -> str:
+    """Strict, unlike check_typed: no typo or missing-umlaut leniency.
+
+    Here a one-letter difference IS the grammar being tested (Stifte vs
+    *Stiften, Väter vs *Vater), so it must count as wrong. canon() still
+    ignores case, spacing and ae-for-ä. The one "close": the right participle
+    without its hat/ist.
+    """
+    g = canon(given or "")
+    if g and any(g == canon(t) for t in (forms.answer, *forms.accepted)):
+        return CORRECT
+    if g and any(g == canon(p) for p in forms.partial):
+        return CLOSE
+    return WRONG
+
+
+def _alternatives(text: str) -> tuple[str, ...]:
+    # "leaned/leant" -> both
+    return tuple(a.strip() for a in text.split("/") if a.strip()) or (text,)
+
+
+def _unique(values: tuple[str, ...], answer: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(v for v in values if canon(v) != canon(answer)))
 
 
 # --------------------------------------------------------------------------- #
