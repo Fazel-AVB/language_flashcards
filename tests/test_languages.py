@@ -152,3 +152,12 @@ def test_legacy_direction_is_migrated(fc_home, stored, expected):
     fc_home.mkdir(parents=True, exist_ok=True)
     (fc_home / "config.json").write_text(json.dumps({"reference_path": None, "prefs": {"direction": stored}}))
     assert config.load_config()["prefs"]["direction"] == expected
+
+
+def test_language_codes_for_speech():
+    from flashcards.models import language_code
+
+    assert language_code("German") == "de"
+    assert language_code(" persian ") == "fa"
+    assert language_code("Klingon") is None
+    assert language_code(None) is None

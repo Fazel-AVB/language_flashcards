@@ -173,6 +173,25 @@ def is_rtl(language: str | None) -> bool:
     return (language or "").strip().lower() in RTL_LANGUAGES
 
 
+# Language name as written in A1/B1 -> BCP 47 primary tag, for picking a
+# speech voice in the browser (app.js speak()). Only the primary tag: the
+# page matches any regional voice (de-DE, de-AT, ...) the computer has.
+LANGUAGE_CODES = {
+    "arabic": "ar", "chinese": "zh", "danish": "da", "dari": "fa", "dutch": "nl",
+    "english": "en", "farsi": "fa", "finnish": "fi", "french": "fr", "german": "de",
+    "greek": "el", "hebrew": "he", "hindi": "hi", "italian": "it", "japanese": "ja",
+    "korean": "ko", "norwegian": "nb", "persian": "fa", "polish": "pl",
+    "portuguese": "pt", "russian": "ru", "spanish": "es", "swedish": "sv",
+    "turkish": "tr", "ukrainian": "uk", "urdu": "ur",
+}
+
+
+def language_code(language: str | None) -> str | None:
+    """BCP 47 code for a language name ("German" -> "de"); None if unknown,
+    in which case the page offers no pronunciation for that side."""
+    return LANGUAGE_CODES.get((language or "").strip().lower())
+
+
 def _snap(value: float) -> float:
     """Clamp to [1, 5] and round to the nearest CONFIDENCE_STEP.
 

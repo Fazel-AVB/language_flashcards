@@ -94,6 +94,69 @@ function flash(text, kind = "info", sticky = false) {
 
 function showStopped() { document.getElementById("stopped").hidden = false; }
 
+function remember(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private mode */ } }
+function recall(key, fallback) { try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); } catch (e) { return fallback; } }
+
+// ---------------------------------------------------------------------------
+// pronunciation
+// ---------------------------------------------------------------------------
+//
+// The browser's own speech engine (Web Speech API), which speaks with the
+// voices installed in the operating system: nothing to install, works offline.
+// Languages arrive as codes from the server (models.language_code).
+//
+// Local voices only, unless you allow online ones: Edge's "Online (Natural)"
+// and Chrome's "Google ..." voices send the text to Microsoft / Google, which
+// would break "nothing leaves your computer" (README, Privacy). The settings
+// are per browser (localStorage), not in config.json: they describe this
+// browser's voices, not your vocabulary.
+const speech = {
+  ok: "speechSynthesis" in window,
+  voices: [],
+  auto: recall("fc.autoSpeak", true),
+  online: recall("fc.onlineVoices", false),
+};
+
+function loadVoices() { speech.voices = speech.ok ? speechSynthesis.getVoices() : []; }
+if (speech.ok) {
+  loadVoices();
+  // Voices load asynchronously in Chrome/Edge; redraw so the buttons enable.
+  speechSynthesis.addEventListener("voiceschanged", () => { loadVoices(); if (state.overview) render(); });
+}
+
+function voiceFor(lang) {
+  if (!lang) return null;
+  const match = speech.voices.filter((v) => v.lang.toLowerCase().split(/[-_]/)[0] === lang && (v.localService || speech.online));
+  return match.find((v) => v.localService && v.default) || match.find((v) => v.localService) || match[0] || null;
+}
+
+function speak(text, lang) {
+  const voice = voiceFor(lang);
+  if (!voice || !text) return;
+  speechSynthesis.cancel();  // a new word interrupts the previous one
+  const u = new SpeechSynthesisUtterance(text);
+  u.voice = voice;
+  u.lang = voice.lang;
+  u.rate = 0.9;  // a little slower than conversation, for learning
+  speechSynthesis.speak(u);
+}
+
+function noVoiceHint(lang) {
+  if (!speech.ok) return "This browser has no speech engine";
+  if (!lang) return "Unknown language name in A1/B1, so no voice can be chosen";
+  return "No voice for this language on this computer. Windows: Settings → Time & language → Speech → Add voices"
+    + (speech.online ? "" : ", or tick “Also use online voices” under Pronunciation on the start page");
+}
+
+function speakBtn(text, lang) {
+  const voice = voiceFor(lang);
+  return h("button", {
+    class: "iconbtn speak", type: "button", disabled: !voice,
+    title: voice ? `Listen (${voice.name})` : noVoiceHint(lang), "aria-label": `Pronounce ${text}`,
+    onclick: (e) => { e.stopPropagation(); speak(text, lang); },
+  }, "🔊");
+}
+
 // ---------------------------------------------------------------------------
 // state
 // ---------------------------------------------------------------------------
@@ -104,6 +167,8 @@ const state = {
   revealed: false, // answer shown for the current card
   form: null,      // deck settings on the start page, seeded from the saved prefs
   busy: false,     // a grade is on its way: ignore key repeats
+  shown: 0,        // counts card presentations, so auto-pronounce fires once per card side
+  spoken: null,
 };
 
 async function load() {
@@ -126,6 +191,7 @@ async function load() {
 function setView(view) {
   state.view = view;
   state.revealed = false;
+  state.shown += 1;
   render();
   window.scrollTo({ top: 0 });
 }
@@ -174,6 +240,7 @@ function renderSetup(o) {
 
   wrap.append(deckForm(o));
   wrap.append(topicTable(o));
+  wrap.append(speechPanel(o));
   wrap.append(referencePanel(o, false));
   return wrap;
 }
@@ -283,6 +350,25 @@ function topicTable(o) {
       h("tbody", {}, rows))));
 }
 
+function speechPanel(o) {
+  const line = (name, lang) => {
+    const v = voiceFor(lang);
+    return h("li", {}, h("b", {}, name), ": ", v ? `${v.name}${v.localService ? "" : " (online)"}` : h("span", { class: "muted" }, noVoiceHint(lang)));
+  };
+  return h("details", { class: "panel" }, h("summary", {}, "Pronunciation"),
+    h("div", { class: "body" },
+      h("p", { class: "muted" }, "Words are spoken by your browser with the voices installed on this computer. "
+        + "More voices: Windows Settings → Time & language → Speech → Add voices."),
+      h("ul", {}, line(o.languages.term, o.language_codes?.term), line(o.languages.native, o.language_codes?.native)),
+      h("label", { class: "check" },
+        h("input", { type: "checkbox", checked: speech.auto, onchange: (e) => { speech.auto = e.target.checked; remember("fc.autoSpeak", speech.auto); } }),
+        "Pronounce the word automatically during review"),
+      h("br"),
+      h("label", { class: "check" },
+        h("input", { type: "checkbox", checked: speech.online, onchange: (e) => { speech.online = e.target.checked; remember("fc.onlineVoices", speech.online); render(); } }),
+        "Also use online voices (better quality; the word is sent to Microsoft or Google)")));
+}
+
 function referencePanel(o, open) {
   const input = h("input", { type: "text", placeholder: "C:\\Users\\you\\OneDrive\\German_learning.xlsx", value: "" });
   const use = async (path) => {
@@ -322,17 +408,20 @@ function renderReview(v) {
   const pct = p.total ? Math.round((100 * p.done) / p.total) : 0;
 
   const card = h("div", { class: "flash-card" },
-    txt("div", c.front.text, c.front.rtl, "front"),
+    h("div", { class: "front-row" }, txt("div", c.front.text, c.front.rtl, "front"), speakBtn(c.front.text, c.front.lang)),
     c.front.hint ? h("div", { class: "hint" }, c.front.hint) : null,
     h("div", { class: "meta" },
       h("span", { class: `chip ${c.schedule === "new word" ? "new" : c.schedule === "due now" ? "due" : ""}` }, c.schedule),
       h("span", { class: "chip" }, `confidence ${c.confidence}`)));
 
   if (!state.revealed) {
+    if (c.front.text === c.back.term) autoSpeak(c.front.text, c.front.lang);
     card.append(h("div", { class: "reveal" },
       h("button", { class: "btn primary big wide", id: "show", onclick: reveal }, "Show answer")));
   } else {
     card.append(answer(c.back));
+    // Front showed the meaning: hearing the word is part of the answer.
+    if (c.front.lang !== c.back.term_lang || c.front.text !== c.back.term) autoSpeak(c.back.term, c.back.term_lang);
     card.append(h("div", { class: "grades" }, v.grades.map((g) => h("button", {
       class: "grade", style: { "--gc": `var(--g${g.grade})` }, title: g.next,
       onclick: () => grade(g.grade),
@@ -349,25 +438,28 @@ function renderReview(v) {
     card,
     h("div", { class: "review-foot" },
       h("button", { class: "btn ghost", onclick: () => act("/api/session/skip"), title: "Next word, no change (S)" }, "Skip"),
+      h("label", { class: "check muted", title: "Say the word when it appears (on the answer side if the card shows the meaning)" },
+        h("input", { type: "checkbox", checked: speech.auto, onchange: (e) => { speech.auto = e.target.checked; remember("fc.autoSpeak", speech.auto); } }),
+        "Pronounce automatically"),
       h("button", { class: "btn ghost", onclick: () => act("/api/session/end"), title: "Go to the summary; nothing is saved yet" }, "End session")),
     h("div", { class: "keys" },
       h("kbd", {}, "Space"), " show answer · ", h("kbd", {}, "1"), "–", h("kbd", {}, "5"), " grade · ",
-      h("kbd", {}, "S"), " skip"));
+      h("kbd", {}, "S"), " skip · ", h("kbd", {}, "P"), " pronounce"));
 }
 
 function answer(b) {
   const out = h("div", { class: "answer" });
   if (b.article) out.append(h("div", { class: "muted" }, `${b.article_label}: `, h("b", {}, b.article)));
-  out.append(txt("div", b.term, b.term_rtl, "term"));
+  out.append(h("div", { class: "front-row start" }, txt("div", b.term, b.term_rtl, "term"), speakBtn(b.term, b.term_lang)));
   if (b.pronunciation) out.append(h("div", { class: "hint", style: { textAlign: "left" } }, b.pronunciation));
   out.append(h("div", { class: "label" }, b.native_language));
-  out.append(txt("div", b.meaning, b.native_rtl, "meaning"));
+  out.append(h("div", { class: "front-row start" }, txt("div", b.meaning, b.native_rtl, "meaning"), speakBtn(b.meaning, b.native_lang)));
   const meta = [b.word_type, b.forms ? `${b.forms_label}: ${b.forms}` : null].filter(Boolean);
   if (meta.length) out.append(h("div", { class: "muted", style: { marginTop: ".4rem" } }, meta.join(" · ")));
   if (b.example_term) {
     out.append(h("div", { class: "label" }, "Example"));
-    out.append(txt("div", b.example_term, b.term_rtl, "quote"));
-    if (b.example_meaning) out.append(txt("div", b.example_meaning, b.native_rtl, "quote it"));
+    out.append(h("div", { class: "front-row start" }, txt("div", b.example_term, b.term_rtl, "quote"), speakBtn(b.example_term, b.term_lang)));
+    if (b.example_meaning) out.append(h("div", { class: "front-row start" }, txt("div", b.example_meaning, b.native_rtl, "quote it"), speakBtn(b.example_meaning, b.native_lang)));
   }
   if (b.synonyms) {
     out.append(h("div", { class: "label" }, "Related"));
@@ -378,6 +470,14 @@ function answer(b) {
     out.append(h("div", {}, b.notes));
   }
   return out;
+}
+
+function autoSpeak(text, lang) {
+  // Once per card side: render() also runs for unrelated reasons (voices loading).
+  const key = `${state.shown}:${state.revealed}`;
+  if (!speech.auto || state.spoken === key) return;
+  state.spoken = key;
+  speak(text, lang);
 }
 
 function reveal() {
@@ -406,6 +506,9 @@ document.addEventListener("keydown", (e) => {
     grade(Number(e.key));
   } else if (e.key === "s" || e.key === "S") {
     act("/api/session/skip");
+  } else if (e.key === "p" || e.key === "P") {
+    const c = state.view.card;
+    speak(c.back.term, c.back.term_lang);
   }
 });
 

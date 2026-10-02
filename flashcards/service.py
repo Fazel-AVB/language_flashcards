@@ -25,7 +25,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone, tzinfo
 
 from . import config, paths, srs
-from .models import CONFIDENCE_MAX, CONFIDENCE_MIN, Card, format_confidence, is_rtl
+from .models import CONFIDENCE_MAX, CONFIDENCE_MIN, Card, format_confidence, is_rtl, language_code
 from .session import DIRECTIONS, MODES, ORDERS, ReviewSession, build_deck
 from .workbook import WorkbookData, WorkbookError, load_cards
 from .writeback import WritebackError, WriteResult, apply_updates
@@ -101,6 +101,8 @@ class Service:
         later = [c.schedule.due for c in data.cards if status[c.id] == srs.LATER]
         out.update(
             languages={"term": data.languages.term, "native": data.languages.native},
+            language_codes={"term": language_code(data.languages.term),
+                            "native": language_code(data.languages.native)},
             words=len(data.cards),
             topics=topics,
             due=sum(s == srs.DUE for s in status.values()),
@@ -272,10 +274,11 @@ class Service:
         pair = card.languages
         if direction == "term_to_native":
             front = {"text": card.term, "language": pair.term, "rtl": is_rtl(pair.term),
-                     "hint": card.pronunciation or ""}
+                     "lang": language_code(pair.term), "hint": card.pronunciation or ""}
         else:
             # No pronunciation on this side: next to the meaning it would spell out the answer.
-            front = {"text": card.meaning, "language": pair.native, "rtl": is_rtl(pair.native), "hint": ""}
+            front = {"text": card.meaning, "language": pair.native, "rtl": is_rtl(pair.native),
+                     "lang": language_code(pair.native), "hint": ""}
 
         schedule = s.effective_schedule(card.id)
         state = srs.status(schedule, now, self._tz)
@@ -386,6 +389,8 @@ def _back(card: Card) -> dict:
         "native_language": pair.native,
         "term_rtl": is_rtl(pair.term),
         "native_rtl": is_rtl(pair.native),
+        "term_lang": language_code(pair.term),
+        "native_lang": language_code(pair.native),
         "article_label": card.article_label,
         "article": card.article_aux,
         "pronunciation": card.pronunciation,

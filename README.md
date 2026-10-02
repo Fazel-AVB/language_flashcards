@@ -90,7 +90,24 @@ A normal day: open the app, press **Start review** on *Due now*, grade each word
 workbook**. Words you answered well come back days or weeks later; words you missed come back
 soon.
 
-Keyboard on the Review screen: **Space** / **Enter** show the answer, **1–5** grade, **S** skips.
+Keyboard on the Review screen: **Space** / **Enter** show the answer, **1–5** grade, **S** skips,
+**P** pronounces the word.
+
+### Pronunciation
+
+🔊 next to the word, its meaning and the examples reads them aloud. With *Pronounce
+automatically* on, the word is spoken when it appears (or when you reveal it, if the card
+showed the meaning). It uses your browser's built-in speech engine with the voices installed on
+the computer: nothing to install, works offline.
+
+- A grey 🔊 means this computer has no voice for that language. On Windows: *Settings → Time &
+  language → Speech → Add voices* (German, English and many others are available), then
+  reload the page. The **Pronunciation** panel on the start page shows which voice is used.
+- Windows has no installable Persian voice. Ticking *Also use online voices* lets Edge use its
+  online voices (Persian included). Those send the text to Microsoft (Edge) or Google
+  (Chrome), so they are off by default.
+- The language is taken from the names in A1/B1 (`German` → `de`, …; list in
+  `models.LANGUAGE_CODES`).
 
 ## Spaced repetition (FSRS)
 
@@ -250,7 +267,8 @@ flashcards --version
 
 ## Privacy
 
-Nothing leaves your computer. The app serves its page on `127.0.0.1` only, loads nothing from the
+Nothing leaves your computer. (The one opt-in exception: *Also use online voices*, see
+[Pronunciation](#pronunciation).) The app serves its page on `127.0.0.1` only, loads nothing from the
 internet, and requires a random key (new at every start) on every request, so websites open in
 your browser can't read your vocabulary or change your workbook.
 

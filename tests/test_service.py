@@ -89,6 +89,9 @@ def test_card_view_has_previews(svc):
     assert view["grades"][2]["next"] == "next review in 10 min"   # Good on a new word
     assert view["card"]["schedule"] == "new word"
     assert view["card"]["front"]["text"] == view["card"]["back"]["term"]
+    # Language codes for the browser's speech voices (app.js voiceFor).
+    assert view["card"]["front"]["lang"] == "de"
+    assert view["card"]["back"]["native_lang"] == "en"
 
 
 def test_prefs_are_remembered(svc):
