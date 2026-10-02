@@ -26,6 +26,8 @@ const EXERCISE_LABELS = {
   flashcard: "Flashcards",
   choice: "Multiple choice",
   blank: "Fill in the blank",
+  recall: "Type the word",
+  article: "Article (der/die/das)",
   mixed: "Mixed",
 };
 const ORDER_LABELS = {
@@ -313,7 +315,11 @@ function deckForm(o) {
     h("label", { class: "field", title: "Fill in the blank uses each word's example sentence; a word whose sentence doesn't contain it gets multiple choice instead" },
       "Exercise",
       h("select", { onchange: (e) => set("exercise", e.target.value) },
-        Object.entries(EXERCISE_LABELS).map(([k, v]) => h("option", { value: k, selected: f.exercise === k }, v)))),
+        Object.entries(EXERCISE_LABELS).map(([k, v]) => h("option", {
+          value: k, selected: f.exercise === k,
+          // Only offered when column D has der/die/das nouns (service.overview article_words).
+          disabled: k === "article" && !o.article_words,
+        }, k === "article" && o.article_words ? `${v} · ${o.article_words} nouns` : v)))),
     h("label", { class: "field" }, "Order",
       h("select", { title: f.mode === "due" ? "Due words always come most-forgotten first; this orders the new words after them" : null,
         onchange: (e) => set("order", e.target.value) },
@@ -436,7 +442,8 @@ function renderReview(v) {
 
   if (!answered) {
     if (frontIsTerm) autoSpeak(c.front.text, c.front.lang);
-    if (ex.kind === "choice") card.append(choicePart(ex, null));
+    if (ex.kind === "choice" || ex.kind === "article") card.append(choicePart(ex, null));
+    else if (ex.kind === "recall") card.append(blankPart(ex, null));
     else if (ex.kind === "flashcard") {
       card.append(h("div", { class: "reveal" },
         h("button", { class: "btn primary big wide", id: "show", onclick: reveal }, "Show answer")));
@@ -444,7 +451,7 @@ function renderReview(v) {
   } else {
     // The front didn't say the word: hearing it is part of the answer.
     if (!frontIsTerm) autoSpeak(c.back.term, c.back.term_lang);
-    if (ex.kind === "choice") card.append(choicePart(ex, res));
+    if (ex.kind === "choice" || ex.kind === "article") card.append(choicePart(ex, res));
     if (res) card.append(verdict(res, ex));
     card.append(answer(c.back));
     if (res) card.append(h("div", { class: "muted", style: { marginTop: "1rem" } },
@@ -457,8 +464,8 @@ function renderReview(v) {
       h("span", { class: "gn" }, `→ ${g.confidence} · ${g.next.replace("next review ", "")}`)))));
   }
 
-  const keys = !answered && ex.kind === "choice" ? [h("kbd", {}, "1"), "–", h("kbd", {}, String(ex.options.length)), " choose · "]
-    : !answered && ex.kind === "blank" ? [h("kbd", {}, "Enter"), " check · "]
+  const keys = !answered && (ex.kind === "choice" || ex.kind === "article") ? [h("kbd", {}, "1"), "–", h("kbd", {}, String(ex.options.length)), " choose · "]
+    : !answered && (ex.kind === "blank" || ex.kind === "recall") ? [h("kbd", {}, "Enter"), " check · "]
     : !answered ? [h("kbd", {}, "Space"), " show answer · "]
     : [h("kbd", {}, "1"), "–", h("kbd", {}, "5"), " grade · "];
   return h("div", {},
@@ -479,7 +486,8 @@ function renderReview(v) {
 
 // Multiple choice: numbered options; after checking, the right one green and a wrong pick red.
 function choicePart(ex, res) {
-  return h("div", { class: "options" }, ex.options.map((text, i) => {
+  // der / die / das side by side; real options (meanings, words) one per line.
+  return h("div", { class: ex.kind === "article" ? "options row" : "options" }, ex.options.map((text, i) => {
     const cls = !res ? "" : text === res.expected ? " right" : i === res.picked ? " wrong" : " dim";
     return h("button", { class: `option${cls}`, disabled: !!res, dir: ex.rtl ? "rtl" : "auto",
       onclick: () => check(i) }, h("span", { class: "num" }, i + 1), text);
@@ -489,6 +497,7 @@ function choicePart(ex, res) {
 // Fill in the blank: the sentence with an input in the gap; the meaning as a hint.
 function blankPart(ex, res) {
   const wrap = h("div", { class: "blank" });
+  if (res && ex.kind === "recall") return wrap;  // the answer section below shows the word
   if (res) {
     wrap.append(h("div", { class: "sentence", dir: ex.rtl ? "rtl" : "auto" }, ex.before, h("mark", {}, res.expected), ex.after));
     return wrap;
@@ -496,11 +505,13 @@ function blankPart(ex, res) {
   const input = h("input", { type: "text", class: "gap", autocomplete: "off", autocapitalize: "off", spellcheck: false,
     "aria-label": "The missing word", size: Math.max(6, Math.min(24, (ex.answer_len || 10))),
     onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); check(input.value); } } });
-  wrap.append(
+  // Through filter: native append() would print a skipped (null) hint as the text "null".
+  wrap.append(...[
     h("div", { class: "sentence", dir: ex.rtl ? "rtl" : "auto" }, ex.before, input, ex.after),
-    h("div", { class: "blank-hint" }, txt("span", ex.hint, ex.hint_rtl)),
+    ex.hint ? h("div", { class: "blank-hint" }, txt("span", ex.hint, ex.hint_rtl)) : null,
     ex.hint_example ? h("div", { class: "blank-hint it" }, txt("span", ex.hint_example, ex.hint_rtl)) : null,
-    h("div", { class: "reveal" }, h("button", { class: "btn primary big wide", onclick: () => check(input.value) }, "Check")));
+    h("div", { class: "reveal" }, h("button", { class: "btn primary big wide", onclick: () => check(input.value) }, "Check")),
+  ].filter(Boolean));
   // After the page is drawn, so the field exists to focus.
   setTimeout(() => input.focus(), 0);
   return wrap;
@@ -512,7 +523,7 @@ function verdict(res, ex) {
   if (res.verdict === "correct") return box("ok", "✓ Correct");
   if (res.verdict === "close") {
     return box("warn", "≈ Almost: check the spelling. You wrote ", h("b", { dir: "auto" }, res.given),
-      ", the sentence has ", h("b", { dir: "auto" }, res.expected), ".");
+      ex.kind === "blank" ? ", the sentence has " : ", the word is ", h("b", { dir: "auto" }, res.expected), ".");
   }
   return box("err", "✗ Not quite. The answer is ", h("b", { dir: "auto" }, res.expected),
     res.given ? h("span", {}, " (you wrote ", h("b", { dir: "auto" }, res.given), ")") : null, ".");
@@ -580,7 +591,7 @@ document.addEventListener("keydown", (e) => {
   const ex = state.view.exercise;
   const res = state.view.result;
   const answered = state.revealed || !!res;
-  if (!answered && ex.kind === "choice" && /^[1-9]$/.test(e.key) && Number(e.key) <= ex.options.length) {
+  if (!answered && (ex.kind === "choice" || ex.kind === "article") && /^[1-9]$/.test(e.key) && Number(e.key) <= ex.options.length) {
     e.preventDefault();
     check(Number(e.key) - 1);
   } else if (!answered && ex.kind === "flashcard" && (e.key === " " || e.key === "Enter")) {

@@ -103,7 +103,9 @@ Pick one under **Exercise** when you build a deck:
 | **Flashcards** | the word (or its meaning) | think of the answer, **Show answer**, grade yourself |
 | **Multiple choice** | the word (or its meaning) and four options | pick one (click or **1–4**) |
 | **Fill in the blank** | the word's example sentence with a gap, plus its meaning and the translated example as hints | type the missing word, **Enter** |
-| **Mixed** | any of the three, per card | |
+| **Type the word** | the meaning and the word type | type the word, **Enter** (with or without its article: `die Kerze` and `Kerze` both count) |
+| **Article (der/die/das)** | a German noun | pick **der / die / das** (click or **1–3**). Only nouns whose column D is exactly der, die or das are in this deck; the option is greyed out for a workbook with none |
+| **Mixed** | any of the above, per card | |
 
 The wrong options come from your own workbook, preferring words of the same type and topic,
 so a noun is not picked out among verbs. The blank is cut from column G (*Example*): the word
@@ -115,7 +117,8 @@ Typed answers ignore case, spacing and punctuation, and accept `ae`/`oe`/`ue`/`s
 `ä`/`ö`/`ü`/`ß`. A missing accent or one typo counts as **almost**.
 
 **Grading stays yours.** After checking, the app proposes a grade (highlighted; **Enter**
-takes it): right → 4, almost → 3, wrong → 1. Press another number if you were lucky or it
+takes it): right → 4, almost → 3, wrong → 1. A wrong article proposes 2, not 1: knowing the
+word but not its gender is shaky, not forgotten. Press another number if you were lucky or it
 was effortless. The grade then updates confidence and FSRS exactly as for a flashcard.
 
 ### Pronunciation
@@ -306,7 +309,7 @@ flashcards/
   workbook.py             read topic sheets -> Cards (read-only), schedule included
   srs.py                  FSRS: grades -> due dates, the M-R cells, due status
   session.py              deck building and ReviewSession (first pass, repeats, grading)
-  exercises.py            multiple choice and fill-in-the-blank: building and checking
+  exercises.py            the exercises (choice, blank, type the word, article): building and checking
   writeback.py            surgical cell writes into the .xlsx
   config.py               the workbook path and your deck preferences
   paths.py                where settings, backups and the review log live (~/.flashcards)

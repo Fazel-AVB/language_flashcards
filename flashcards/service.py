@@ -24,7 +24,7 @@ import threading
 from collections.abc import Callable
 from datetime import datetime, timezone, tzinfo
 
-from . import config, paths, srs
+from . import config, exercises, paths, srs
 from .models import CONFIDENCE_MAX, CONFIDENCE_MIN, Card, format_confidence, is_rtl, language_code
 from .session import DIRECTIONS, EXERCISES, MODES, ORDERS, ReviewSession, build_deck
 from .workbook import WorkbookData, WorkbookError, load_cards
@@ -104,6 +104,7 @@ class Service:
             language_codes={"term": language_code(data.languages.term),
                             "native": language_code(data.languages.native)},
             words=len(data.cards),
+            article_words=sum(1 for c in data.cards if exercises.article_of(c)),
             topics=topics,
             due=sum(s == srs.DUE for s in status.values()),
             new=sum(s == srs.NEW for s in status.values()),
@@ -169,8 +170,13 @@ class Service:
             return self.view()
 
     def _build(self, data: WorkbookData, opts: dict, *, seed: int, limit: int | None) -> list[Card]:
+        cards = data.cards
+        if opts["exercise"] == "article":
+            # Only nouns with a plain der/die/das can be drilled; filtering here (not
+            # falling back per card) makes "N words in scope" count what you'll get.
+            cards = [c for c in cards if exercises.article_of(c)]
         return build_deck(
-            data.cards, mode=opts["mode"], topics=opts["topics"],
+            cards, mode=opts["mode"], topics=opts["topics"],
             difficult_threshold=opts["threshold"], order=opts["order"],
             seed=seed, limit=limit, now=self._now(), local_tz=self._tz,
         )
@@ -280,7 +286,11 @@ class Service:
         s = self._session
         card = s.current_card
         now = self._now()
+        ex = s.current_exercise()
         direction = s.direction_for(card.id)
+        # Some exercises fix the side you see: the article drill shows the noun,
+        # typing the word shows its meaning.
+        direction = {"article": "term_to_native", "recall": "native_to_term"}.get(ex.kind, direction)
         pair = card.languages
         if direction == "term_to_native":
             front = {"text": card.term, "language": pair.term, "rtl": is_rtl(pair.term),
@@ -310,7 +320,6 @@ class Service:
                         else f"next review {srs.describe_due(sched.due, now, self._tz)}",
             })
 
-        ex = s.current_exercise()
         exercise: dict = {"kind": ex.kind}
         if ex.choice:
             native = ex.choice.answer_side == "native"
@@ -322,7 +331,11 @@ class Service:
                             answer_len=len(ex.blank.answer),
                             lang=language_code(pair.term), hint=card.meaning,
                             hint_rtl=is_rtl(pair.native), hint_example=card.example_meaning or "")
-            if s.result is None:
+            if ex.kind == "recall":
+                # The meaning is already the front; the word type narrows it down
+                # ("to talk" vs "the talk") without giving the word away.
+                exercise.update(hint=card.word_type or "", hint_rtl=False, hint_example="")
+            if ex.kind == "blank" and s.result is None:
                 # The blank card's front is the sentence: the word itself would give it away.
                 front = {"text": "", "language": pair.term, "rtl": is_rtl(pair.term),
                          "lang": language_code(pair.term), "hint": ""}

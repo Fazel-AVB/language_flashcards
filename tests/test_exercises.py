@@ -135,3 +135,40 @@ def test_mixed_varies_by_turn(cards):
         kinds.add(s.current_exercise().kind)
         s.skip()
     assert len(kinds) >= 2
+
+
+# --- type the word and the article drill -------------------------------------
+
+def test_recall_accepts_article_and_variants(cards):
+    stift = card(cards, "Stift")                      # article "der"
+    r = ex.make_recall(stift)
+    assert r.answer == "Stift"
+    assert ex.check_typed("Stift", r) == ex.CORRECT
+    assert ex.check_typed("der Stift", r) == ex.CORRECT
+    assert ex.check_typed("Stft", r) == ex.CLOSE      # one letter missing in a 5-letter word
+    assert ex.check_typed("Kuli", r) == ex.WRONG
+    lash = ex.make_recall(replace(stift, term="lash out at someone", article_aux=None))
+    assert ex.check_typed("lash out at", lash) == ex.CORRECT
+
+
+@pytest.mark.parametrize("article,expected", [
+    ("der", "der"), (" Die ", "die"), ("das", "das"),
+    ("sein", None), ("der/das", None), ("—", None), (None, None),
+])
+def test_article_of(cards, article, expected):
+    assert ex.article_of(replace(cards[0], article_aux=article)) == expected
+
+
+def test_article_exercise_in_session(cards):
+    stift = card(cards, "Stift")
+    s = session([stift], cards, "article")
+    e = s.current_exercise()
+    assert e.kind == "article" and e.choice.options == ["der", "die", "das"]
+    res = s.check(2)                                  # "das": wrong
+    assert res["verdict"] == ex.WRONG and res["expected"] == "der" and res["suggested"] == 2
+
+
+def test_recall_in_session(cards):
+    s = session([card(cards, "werden")], cards, "recall")
+    assert s.current_exercise().kind == "recall"
+    assert s.check("Werden")["suggested"] == 4

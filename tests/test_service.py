@@ -147,3 +147,19 @@ def test_grade_validation(svc):
 def test_scope_counts(svc):
     s = svc.scope({"mode": "due", "size": 2})
     assert s == {"in_scope": 4, "drawn": 2, "due": 0, "new": 2}
+
+
+def test_article_deck_has_only_der_die_das_nouns(svc):
+    # Fixture: Stift and Bericht are "der" nouns; werden has "sein", riesig "—".
+    assert svc.overview()["article_words"] == 2
+    assert svc.scope({"mode": "mix", "exercise": "article"})["in_scope"] == 2
+    view = svc.start({"mode": "mix", "exercise": "article", "direction": "native_to_term"})
+    assert view["exercise"]["kind"] == "article"
+    assert view["card"]["front"]["text"] == view["card"]["back"]["term"]   # the noun, whatever the direction
+
+
+def test_recall_shows_the_meaning(svc):
+    view = svc.start({"mode": "mix", "size": 1, "exercise": "recall", "direction": "term_to_native"})
+    assert view["exercise"]["kind"] == "recall"
+    assert view["card"]["front"]["text"] == view["card"]["back"]["meaning"]
+    assert svc.check(view["card"]["back"]["term"])["result"]["verdict"] == "correct"

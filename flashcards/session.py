@@ -31,15 +31,19 @@ DIRECTIONS = ("mixed", "term_to_native", "native_to_term")
 # How a card is answered (exercises.py). "mixed" picks one per card showing
 # among those the card supports; a card that can't do the chosen kind (no
 # example sentence containing the word, nothing to build distractors from)
-# falls back: blank -> choice -> flashcard.
-EXERCISES = ("flashcard", "choice", "blank", "mixed")
+# falls back: blank -> choice -> flashcard. "article" decks contain only
+# der/die/das nouns (service.Service._build filters them), so it never falls back.
+EXERCISES = ("flashcard", "choice", "blank", "recall", "article", "mixed")
+# What each choice falls back to, in order; "flashcard" is always possible.
+_FALLBACK = {"choice": ("choice",), "blank": ("blank", "choice"), "recall": ("recall",),
+             "article": ("article", "choice")}
 
 
 @dataclass(frozen=True)
 class Exercise:
-    kind: str                               # "flashcard" | "choice" | "blank"
-    choice: exercises.Choice | None = None
-    blank: exercises.Blank | None = None
+    kind: str                               # exercises.KINDS
+    choice: exercises.Choice | None = None  # choice and article
+    blank: exercises.Blank | None = None    # blank and recall
 
 # Sampling weight = (5.5 - score) ** 2, so score 1 is 81x likelier to be drawn
 # than score 5, and an ungraded word outranks everything.
@@ -333,20 +337,20 @@ class ReviewSession:
         if self._exercise is None:
             card = self.cards[cid]
             rng = random.Random(f"{self.seed}:exercise:{self.turn}:{cid}")
+            wanted = set(_FALLBACK.get(self.exercise, ())) if self.exercise != "mixed" else set(_FALLBACK)
             made: dict[str, Exercise] = {"flashcard": Exercise("flashcard")}
-            if self.exercise in ("blank", "mixed"):
-                blank = exercises.make_blank(card)
-                if blank:
-                    made["blank"] = Exercise("blank", blank=blank)
-            if self.exercise in ("choice", "blank", "mixed"):
-                choice = exercises.make_choice(card, self.pool, self.direction_for(cid), rng)
-                if choice:
-                    made["choice"] = Exercise("choice", choice=choice)
+            if "blank" in wanted and (blank := exercises.make_blank(card)):
+                made["blank"] = Exercise("blank", blank=blank)
+            if "recall" in wanted and (recall := exercises.make_recall(card)):
+                made["recall"] = Exercise("recall", blank=recall)
+            if "article" in wanted and (article := exercises.make_article(card)):
+                made["article"] = Exercise("article", choice=article)
+            if "choice" in wanted and (choice := exercises.make_choice(card, self.pool, self.direction_for(cid), rng)):
+                made["choice"] = Exercise("choice", choice=choice)
             if self.exercise == "mixed":
                 self._exercise = made[rng.choice(sorted(made))]
             else:
-                fallback = {"blank": ("blank", "choice"), "choice": ("choice",)}.get(self.exercise, ())
-                kind = next((k for k in fallback if k in made), "flashcard")
+                kind = next((k for k in _FALLBACK.get(self.exercise, ()) if k in made), "flashcard")
                 self._exercise = made[kind]
         return self._exercise
 
@@ -356,7 +360,7 @@ class ReviewSession:
         ex = self.current_exercise()
         if self.result is not None:
             return self.result
-        if ex.kind == "choice":
+        if ex.kind in ("choice", "article"):
             try:
                 picked = int(answer)
             except (TypeError, ValueError) as exc:
@@ -366,7 +370,7 @@ class ReviewSession:
             verdict = exercises.check_choice(ex.choice, picked)
             self.result = {"verdict": verdict, "picked": picked,
                            "expected": ex.choice.options[ex.choice.answer_index]}
-        elif ex.kind == "blank":
+        elif ex.kind in ("blank", "recall"):
             given = "" if answer is None else str(answer)
             verdict = exercises.check_typed(given, ex.blank)
             self.result = {"verdict": verdict, "given": given, "expected": ex.blank.answer}

@@ -1,4 +1,5 @@
-"""Exercises: multiple choice and fill-in-the-blank, built from the workbook itself.
+"""Exercises built from the workbook itself: multiple choice, fill in the blank,
+type the word (recall) and the German article drill.
 
 An exercise only changes *how you answer* a card. After it is checked, the
 app proposes a grade (SUGGESTED_GRADE) and you confirm or override it with
@@ -18,7 +19,8 @@ from dataclasses import dataclass
 
 from .models import Card
 
-KINDS = ("flashcard", "choice", "blank")
+KINDS = ("flashcard", "choice", "blank", "recall", "article")
+ARTICLES = ("der", "die", "das")
 CORRECT, CLOSE, WRONG = "correct", "close", "wrong"
 
 # Proposed grade per outcome. Recognising the answer among four (choice) and
@@ -28,6 +30,11 @@ CORRECT, CLOSE, WRONG = "correct", "close", "wrong"
 SUGGESTED_GRADE = {
     ("choice", CORRECT): 4, ("choice", WRONG): 1,
     ("blank", CORRECT): 4, ("blank", CLOSE): 3, ("blank", WRONG): 1,
+    ("recall", CORRECT): 4, ("recall", CLOSE): 3, ("recall", WRONG): 1,
+    # A wrong article is not a forgotten word: you may well know what it means.
+    # 2 ("shaky") keeps it coming back soon without resetting it like 1 would;
+    # press 1 yourself if the word meant nothing to you.
+    ("article", CORRECT): 4, ("article", WRONG): 2,
 }
 
 N_OPTIONS = 4
@@ -94,6 +101,44 @@ def make_choice(card: Card, pool: list[Card], direction: str, rng: random.Random
 
 def check_choice(choice: Choice, picked: int) -> str:
     return CORRECT if picked == choice.answer_index else WRONG
+
+
+# --------------------------------------------------------------------------- #
+# Article drill (German nouns)
+# --------------------------------------------------------------------------- #
+
+def article_of(card: Card) -> str | None:
+    """The noun's article if column D holds exactly der, die or das, else None.
+
+    Anything else -- verbs' auxiliaries (haben/sein), "der/das" nouns with two
+    genders, "—" -- is not drillable and keeps the card out of the article deck.
+    """
+    a = (card.article_aux or "").strip().lower()
+    return a if a in ARTICLES else None
+
+
+def make_article(card: Card) -> Choice | None:
+    a = article_of(card)
+    if a is None:
+        return None
+    return Choice(options=list(ARTICLES), answer_index=ARTICLES.index(a), answer_side="article")
+
+
+# --------------------------------------------------------------------------- #
+# Type the word (recall)
+# --------------------------------------------------------------------------- #
+
+def make_recall(card: Card) -> Blank | None:
+    """See the meaning, type the word. A Blank with nothing around the gap, so
+    check_typed applies the same leniency as fill-in-the-blank."""
+    if not card.term or not card.meaning:
+        return None
+    variants = term_variants(card.term)
+    article = article_of(card)
+    # Typing the noun with its article ("die Kerze") is right, not wrong.
+    with_article = [f"{article} {v}" for v in variants] if article else []
+    accepted = tuple(dict.fromkeys(v for v in (*variants, *with_article) if canon(v) != canon(card.term)))
+    return Blank(before="", after="", answer=card.term, accepted=accepted)
 
 
 # --------------------------------------------------------------------------- #
