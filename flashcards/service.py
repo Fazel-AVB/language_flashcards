@@ -26,7 +26,7 @@ from datetime import datetime, timezone, tzinfo
 
 from . import config, paths, srs
 from .models import CONFIDENCE_MAX, CONFIDENCE_MIN, Card, format_confidence, is_rtl, language_code
-from .session import DIRECTIONS, MODES, ORDERS, ReviewSession, build_deck
+from .session import DIRECTIONS, EXERCISES, MODES, ORDERS, ReviewSession, build_deck
 from .workbook import WorkbookData, WorkbookError, load_cards
 from .writeback import WritebackError, WriteResult, apply_updates
 
@@ -151,7 +151,7 @@ class Service:
                 raise UserError("A session is already in progress.")
             data = self._load_reference()
             config.update_prefs(
-                mode=opts["mode"], topics=opts["topics"], direction=opts["direction"],
+                mode=opts["mode"], topics=opts["topics"], direction=opts["direction"], exercise=opts["exercise"],
                 order=opts["order"], difficult_threshold=opts["threshold"],
                 repeat_until_mastered=opts["repeat"], session_size=opts["size"],
             )
@@ -164,6 +164,7 @@ class Service:
             self._session = ReviewSession(
                 deck, direction=opts["direction"], repeat=opts["repeat"], seed=seed,
                 scheduler=srs.make_scheduler(fuzz=self._fuzz),
+                exercise=opts["exercise"], pool=data.cards,
             )
             return self.view()
 
@@ -196,6 +197,15 @@ class Service:
             raise UserError("grade must be a number 1-5")
         with self._lock:
             self._active().grade(grade, self._now())
+            return self.view()
+
+    def check(self, answer) -> dict:
+        """Check the answer to a multiple-choice or fill-in-the-blank card."""
+        with self._lock:
+            try:
+                self._active().check(answer)
+            except ValueError as exc:
+                raise UserError(str(exc)) from exc
             return self.view()
 
     def skip(self) -> dict:
@@ -300,7 +310,26 @@ class Service:
                         else f"next review {srs.describe_due(sched.due, now, self._tz)}",
             })
 
+        ex = s.current_exercise()
+        exercise: dict = {"kind": ex.kind}
+        if ex.choice:
+            native = ex.choice.answer_side == "native"
+            lang_name = pair.native if native else pair.term
+            exercise.update(options=ex.choice.options, rtl=is_rtl(lang_name), lang=language_code(lang_name))
+        if ex.blank:
+            # answer_len sizes the input box: a length hint, as on paper worksheets.
+            exercise.update(before=ex.blank.before, after=ex.blank.after, rtl=is_rtl(pair.term),
+                            answer_len=len(ex.blank.answer),
+                            lang=language_code(pair.term), hint=card.meaning,
+                            hint_rtl=is_rtl(pair.native), hint_example=card.example_meaning or "")
+            if s.result is None:
+                # The blank card's front is the sentence: the word itself would give it away.
+                front = {"text": "", "language": pair.term, "rtl": is_rtl(pair.term),
+                         "lang": language_code(pair.term), "hint": ""}
+
         return {
+            "exercise": exercise,
+            "result": s.result,
             "progress": {
                 "done": len(s.graded_ids),
                 "total": len(s.deck),
@@ -356,6 +385,9 @@ def _deck_options(params: dict) -> dict:
     mode = params.get("mode", "due")
     order = params.get("order", "weighted")
     direction = params.get("direction", "mixed")
+    exercise = params.get("exercise", "flashcard")
+    if exercise not in EXERCISES:
+        raise UserError(f"Unknown exercise {exercise!r}.")
     if mode not in MODES:
         raise UserError(f"Unknown mode {mode!r}.")
     if order not in ORDERS:
@@ -376,7 +408,7 @@ def _deck_options(params: dict) -> dict:
         raise UserError("The difficulty threshold must be between 1 and 5.")
     if not 1 <= size <= MAX_SESSION_SIZE:
         raise UserError(f"Words per session must be between 1 and {MAX_SESSION_SIZE}.")
-    return {"mode": mode, "order": order, "direction": direction, "topics": topics,
+    return {"mode": mode, "order": order, "direction": direction, "exercise": exercise, "topics": topics,
             "threshold": threshold, "size": size, "repeat": bool(params.get("repeat", False))}
 
 

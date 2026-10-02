@@ -25,6 +25,7 @@ from .workbook import WorkbookError, load_cards
 #                                       also Anki's long-standing new-cards/day
 DEFAULT_PREFS = {
     "mode": "due",  # | "topic" | "mix" | "difficult"
+    "exercise": "flashcard",  # | "choice" | "blank" | "mixed"  (session.EXERCISES)
     "topics": [],
     "direction": "mixed",  # "term_to_native" | "native_to_term" | "mixed"
     "difficult_threshold": 2,

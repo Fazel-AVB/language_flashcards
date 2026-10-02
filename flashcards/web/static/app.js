@@ -21,6 +21,13 @@ const MODES = [
   ["mix", "All topics", "Every word in the workbook"],
   ["difficult", "Difficult", "Words at or below a confidence you choose"],
 ];
+// session.EXERCISES
+const EXERCISE_LABELS = {
+  flashcard: "Flashcards",
+  choice: "Multiple choice",
+  blank: "Fill in the blank",
+  mixed: "Mixed",
+};
 const ORDER_LABELS = {
   weighted: "Weighted (weakest likeliest)",
   lowest_confidence_first: "Lowest confidence first",
@@ -180,6 +187,7 @@ async function load() {
     state.form = {
       mode: p.mode, topics: p.topics || [], threshold: p.difficult_threshold, order: p.order,
       direction: p.direction, size: p.session_size, repeat: p.repeat_until_mastered,
+      exercise: p.exercise || "flashcard",
     };
   }
   // Topics renamed or removed in the workbook since they were saved.
@@ -302,6 +310,10 @@ function deckForm(o) {
   const directions = { mixed: "Mixed (random)", term_to_native: `${pair.term} → ${pair.native}`, native_to_term: `${pair.native} → ${pair.term}` };
 
   const grid = h("div", { class: "form-grid" },
+    h("label", { class: "field", title: "Fill in the blank uses each word's example sentence; a word whose sentence doesn't contain it gets multiple choice instead" },
+      "Exercise",
+      h("select", { onchange: (e) => set("exercise", e.target.value) },
+        Object.entries(EXERCISE_LABELS).map(([k, v]) => h("option", { value: k, selected: f.exercise === k }, v)))),
     h("label", { class: "field" }, "Order",
       h("select", { title: f.mode === "due" ? "Due words always come most-forgotten first; this orders the new words after them" : null,
         onchange: (e) => set("order", e.target.value) },
@@ -332,7 +344,7 @@ function deckForm(o) {
 function deckParams() {
   const f = state.form;
   return { mode: f.mode, topics: f.mode === "mix" ? [] : f.topics, threshold: f.threshold, order: f.order,
-    direction: f.direction, size: f.size, repeat: f.repeat };
+    direction: f.direction, size: f.size, repeat: f.repeat, exercise: f.exercise };
 }
 
 async function start() {
@@ -405,46 +417,113 @@ function referencePanel(o, open) {
 function renderReview(v) {
   const c = v.card;
   const p = v.progress;
+  const ex = v.exercise;
+  const res = v.result;
   const pct = p.total ? Math.round((100 * p.done) / p.total) : 0;
+  // "Answered": the answer side is open, by Show answer or by a checked exercise.
+  const answered = state.revealed || !!res;
+  const frontIsTerm = ex.kind !== "blank" && c.front.text === c.back.term;
 
-  const card = h("div", { class: "flash-card" },
-    h("div", { class: "front-row" }, txt("div", c.front.text, c.front.rtl, "front"), speakBtn(c.front.text, c.front.lang)),
-    c.front.hint ? h("div", { class: "hint" }, c.front.hint) : null,
-    h("div", { class: "meta" },
-      h("span", { class: `chip ${c.schedule === "new word" ? "new" : c.schedule === "due now" ? "due" : ""}` }, c.schedule),
-      h("span", { class: "chip" }, `confidence ${c.confidence}`)));
+  const card = h("div", { class: "flash-card" });
+  if (c.front.text) {
+    card.append(h("div", { class: "front-row" }, txt("div", c.front.text, c.front.rtl, "front"), speakBtn(c.front.text, c.front.lang)));
+    if (c.front.hint) card.append(h("div", { class: "hint" }, c.front.hint));
+  }
+  if (ex.kind === "blank") card.append(blankPart(ex, res));
+  card.append(h("div", { class: "meta" },
+    h("span", { class: `chip ${c.schedule === "new word" ? "new" : c.schedule === "due now" ? "due" : ""}` }, c.schedule),
+    h("span", { class: "chip" }, `confidence ${c.confidence}`)));
 
-  if (!state.revealed) {
-    if (c.front.text === c.back.term) autoSpeak(c.front.text, c.front.lang);
-    card.append(h("div", { class: "reveal" },
-      h("button", { class: "btn primary big wide", id: "show", onclick: reveal }, "Show answer")));
+  if (!answered) {
+    if (frontIsTerm) autoSpeak(c.front.text, c.front.lang);
+    if (ex.kind === "choice") card.append(choicePart(ex, null));
+    else if (ex.kind === "flashcard") {
+      card.append(h("div", { class: "reveal" },
+        h("button", { class: "btn primary big wide", id: "show", onclick: reveal }, "Show answer")));
+    }
   } else {
+    // The front didn't say the word: hearing it is part of the answer.
+    if (!frontIsTerm) autoSpeak(c.back.term, c.back.term_lang);
+    if (ex.kind === "choice") card.append(choicePart(ex, res));
+    if (res) card.append(verdict(res, ex));
     card.append(answer(c.back));
-    // Front showed the meaning: hearing the word is part of the answer.
-    if (c.front.lang !== c.back.term_lang || c.front.text !== c.back.term) autoSpeak(c.back.term, c.back.term_lang);
+    if (res) card.append(h("div", { class: "muted", style: { marginTop: "1rem" } },
+      "Suggested grade highlighted: press ", h("kbd", {}, "Enter"), " to take it, or pick another."));
     card.append(h("div", { class: "grades" }, v.grades.map((g) => h("button", {
-      class: "grade", style: { "--gc": `var(--g${g.grade})` }, title: g.next,
+      class: `grade${res && res.suggested === g.grade ? " suggested" : ""}`,
+      style: { "--gc": `var(--g${g.grade})` }, title: g.next,
       onclick: () => grade(g.grade),
     }, h("b", {}, g.grade), h("span", { class: "gl" }, g.label),
       h("span", { class: "gn" }, `→ ${g.confidence} · ${g.next.replace("next review ", "")}`)))));
   }
 
+  const keys = !answered && ex.kind === "choice" ? [h("kbd", {}, "1"), "–", h("kbd", {}, String(ex.options.length)), " choose · "]
+    : !answered && ex.kind === "blank" ? [h("kbd", {}, "Enter"), " check · "]
+    : !answered ? [h("kbd", {}, "Space"), " show answer · "]
+    : [h("kbd", {}, "1"), "–", h("kbd", {}, "5"), " grade · "];
   return h("div", {},
     h("div", { class: "progress", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 },
       h("div", { style: { width: `${pct}%` } })),
     h("div", { class: "caption" },
       h("span", {}, `${p.done} / ${p.total} words graded${p.repeats ? ` · ${p.repeats} repeat${p.repeats === 1 ? "" : "s"} queued` : ""}`),
-      h("span", {}, `${c.topic} · ${c.direction_label}`)),
+      h("span", {}, `${c.topic} · ${EXERCISE_LABELS[ex.kind]}${ex.kind === "blank" ? "" : ` · ${c.direction_label}`}`)),
     card,
     h("div", { class: "review-foot" },
       h("button", { class: "btn ghost", onclick: () => act("/api/session/skip"), title: "Next word, no change (S)" }, "Skip"),
-      h("label", { class: "check muted", title: "Say the word when it appears (on the answer side if the card shows the meaning)" },
+      h("label", { class: "check muted", title: "Say the word when it appears (on the answer side if the card doesn't show it)" },
         h("input", { type: "checkbox", checked: speech.auto, onchange: (e) => { speech.auto = e.target.checked; remember("fc.autoSpeak", speech.auto); } }),
         "Pronounce automatically"),
       h("button", { class: "btn ghost", onclick: () => act("/api/session/end"), title: "Go to the summary; nothing is saved yet" }, "End session")),
-    h("div", { class: "keys" },
-      h("kbd", {}, "Space"), " show answer · ", h("kbd", {}, "1"), "–", h("kbd", {}, "5"), " grade · ",
-      h("kbd", {}, "S"), " skip · ", h("kbd", {}, "P"), " pronounce"));
+    h("div", { class: "keys" }, ...keys, h("kbd", {}, "S"), " skip · ", h("kbd", {}, "P"), " pronounce"));
+}
+
+// Multiple choice: numbered options; after checking, the right one green and a wrong pick red.
+function choicePart(ex, res) {
+  return h("div", { class: "options" }, ex.options.map((text, i) => {
+    const cls = !res ? "" : text === res.expected ? " right" : i === res.picked ? " wrong" : " dim";
+    return h("button", { class: `option${cls}`, disabled: !!res, dir: ex.rtl ? "rtl" : "auto",
+      onclick: () => check(i) }, h("span", { class: "num" }, i + 1), text);
+  }));
+}
+
+// Fill in the blank: the sentence with an input in the gap; the meaning as a hint.
+function blankPart(ex, res) {
+  const wrap = h("div", { class: "blank" });
+  if (res) {
+    wrap.append(h("div", { class: "sentence", dir: ex.rtl ? "rtl" : "auto" }, ex.before, h("mark", {}, res.expected), ex.after));
+    return wrap;
+  }
+  const input = h("input", { type: "text", class: "gap", autocomplete: "off", autocapitalize: "off", spellcheck: false,
+    "aria-label": "The missing word", size: Math.max(6, Math.min(24, (ex.answer_len || 10))),
+    onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); check(input.value); } } });
+  wrap.append(
+    h("div", { class: "sentence", dir: ex.rtl ? "rtl" : "auto" }, ex.before, input, ex.after),
+    h("div", { class: "blank-hint" }, txt("span", ex.hint, ex.hint_rtl)),
+    ex.hint_example ? h("div", { class: "blank-hint it" }, txt("span", ex.hint_example, ex.hint_rtl)) : null,
+    h("div", { class: "reveal" }, h("button", { class: "btn primary big wide", onclick: () => check(input.value) }, "Check")));
+  // After the page is drawn, so the field exists to focus.
+  setTimeout(() => input.focus(), 0);
+  return wrap;
+}
+
+function verdict(res, ex) {
+  // One span inside .msg: .msg is a flex row and would put gaps between the bold parts.
+  const box = (kind, ...parts) => h("div", { class: `msg ${kind} verdict` }, h("span", { class: "grow" }, ...parts));
+  if (res.verdict === "correct") return box("ok", "✓ Correct");
+  if (res.verdict === "close") {
+    return box("warn", "≈ Almost: check the spelling. You wrote ", h("b", { dir: "auto" }, res.given),
+      ", the sentence has ", h("b", { dir: "auto" }, res.expected), ".");
+  }
+  return box("err", "✗ Not quite. The answer is ", h("b", { dir: "auto" }, res.expected),
+    res.given ? h("span", {}, " (you wrote ", h("b", { dir: "auto" }, res.given), ")") : null, ".");
+}
+
+async function check(answerValue) {
+  await safely(async () => {
+    // Not setView: same card, so auto-pronounce and the turn counter stay as they are.
+    state.view = await api("POST", "/api/session/check", { answer: answerValue });
+    render();
+  });
 }
 
 function answer(b) {
@@ -474,7 +553,7 @@ function answer(b) {
 
 function autoSpeak(text, lang) {
   // Once per card side: render() also runs for unrelated reasons (voices loading).
-  const key = `${state.shown}:${state.revealed}`;
+  const key = `${state.shown}:${state.revealed || !!state.view?.result}`;
   if (!speech.auto || state.spoken === key) return;
   state.spoken = key;
   speak(text, lang);
@@ -498,10 +577,19 @@ async function act(path, body) {
 document.addEventListener("keydown", (e) => {
   if (state.view?.stage !== "review" || e.ctrlKey || e.metaKey || e.altKey) return;
   if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
-  if (!state.revealed && (e.key === " " || e.key === "Enter")) {
+  const ex = state.view.exercise;
+  const res = state.view.result;
+  const answered = state.revealed || !!res;
+  if (!answered && ex.kind === "choice" && /^[1-9]$/.test(e.key) && Number(e.key) <= ex.options.length) {
+    e.preventDefault();
+    check(Number(e.key) - 1);
+  } else if (!answered && ex.kind === "flashcard" && (e.key === " " || e.key === "Enter")) {
     e.preventDefault();
     reveal();
-  } else if (state.revealed && /^[1-5]$/.test(e.key)) {
+  } else if (res && e.key === "Enter") {
+    e.preventDefault();
+    grade(res.suggested);
+  } else if (answered && /^[1-5]$/.test(e.key)) {
     e.preventDefault();
     grade(Number(e.key));
   } else if (e.key === "s" || e.key === "S") {

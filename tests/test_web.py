@@ -88,6 +88,18 @@ def test_browse_then_review_and_save(client, picked, workbook_path):
     assert call(client, "DELETE", "/api/session").get_json()["stage"] == "setup"
 
 
+def test_choice_exercise_flow(client, workbook_path):
+    call(client, "PUT", "/api/reference", {"path": str(workbook_path)})
+    view = call(client, "POST", "/api/session", {"mode": "mix", "size": 1, "exercise": "choice"}).get_json()
+    assert view["exercise"]["kind"] == "choice" and len(view["exercise"]["options"]) >= 2
+    view = call(client, "POST", "/api/session/check", {"answer": 0}).get_json()
+    assert view["result"]["verdict"] in ("correct", "wrong") and view["result"]["suggested"] in (1, 4)
+    assert call(client, "POST", "/api/session/check", {"answer": "x"}).status_code == 200  # already checked: same result
+    call(client, "DELETE", "/api/session")
+    r = call(client, "POST", "/api/session", {"mode": "mix", "exercise": "quiz"})
+    assert r.status_code == 400 and "Unknown exercise" in r.get_json()["error"]
+
+
 def test_user_error_is_400_with_message(client, workbook_path):
     r = call(client, "PUT", "/api/reference", {"path": "/no/such/file.xlsx"})
     assert r.status_code == 400 and "Not a file" in r.get_json()["error"]

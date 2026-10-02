@@ -15,7 +15,7 @@ from datetime import date, datetime, tzinfo
 
 import fsrs
 
-from . import srs
+from . import exercises, srs
 from .models import CONFIDENCE_COL, CONFIDENCE_MAX, Card, blend_confidence
 
 # "due": words FSRS says are due now (most forgotten first), then new words.
@@ -27,6 +27,19 @@ ORDERS = ("weighted", "lowest_confidence_first", "random", "oldest_first")
 # mean anything in a Persian workbook. "term" is the word being learned
 # (column A), "native" its gloss (column B). See models.LanguagePair.
 DIRECTIONS = ("mixed", "term_to_native", "native_to_term")
+
+# How a card is answered (exercises.py). "mixed" picks one per card showing
+# among those the card supports; a card that can't do the chosen kind (no
+# example sentence containing the word, nothing to build distractors from)
+# falls back: blank -> choice -> flashcard.
+EXERCISES = ("flashcard", "choice", "blank", "mixed")
+
+
+@dataclass(frozen=True)
+class Exercise:
+    kind: str                               # "flashcard" | "choice" | "blank"
+    choice: exercises.Choice | None = None
+    blank: exercises.Blank | None = None
 
 # Sampling weight = (5.5 - score) ** 2, so score 1 is 81x likelier to be drawn
 # than score 5, and an ungraded word outranks everything.
@@ -233,12 +246,20 @@ class ReviewSession:
     repeat: bool = False
     seed: int = 0
     scheduler: fsrs.Scheduler = field(default_factory=srs.make_scheduler)
+    exercise: str = "flashcard"
+    # Where multiple-choice distractors come from: the whole workbook, not just
+    # the deck, so a 5-word deck still gets varied options. None = the deck.
+    pool: list[Card] | None = None
 
     def __post_init__(self) -> None:
         if not self.deck:
             raise ValueError("cannot start a session with no cards")
         if self.direction not in DIRECTIONS:
             raise ValueError(f"unknown direction: {self.direction!r}")
+        if self.exercise not in EXERCISES:
+            raise ValueError(f"unknown exercise: {self.exercise!r}")
+        if self.pool is None:
+            self.pool = list(self.deck)
         self.cards: dict[str, Card] = {c.id: c for c in self.deck}
         self.first_pass: list[str] = [c.id for c in self.deck]
         self.pending: list[str] = []  # words still below 5, re-drilled after the first pass
@@ -247,6 +268,11 @@ class ReviewSession:
         self.confidence: dict[str, float] = {}       # in-session confidence of graded words
         self.schedules: dict[str, srs.Schedule] = {}  # in-session schedule of graded words
         self.log: list[ReviewEntry] = []
+        # One "turn" per card showing; a repeat of the same word is a new turn
+        # and may get a different exercise. Reset by _advance.
+        self.turn = 0
+        self._exercise: Exercise | None = None
+        self.result: dict | None = None  # outcome of check() for this turn
         # Previews use an unfuzzed copy: a button whose "next review" text
         # changed between two looks would read as a bug. Real grades are fuzzed.
         self._preview_scheduler = fsrs.Scheduler(
@@ -298,6 +324,56 @@ class ReviewSession:
         if not self.counts_for_schedule(card_id, now):
             return confidence, None
         return confidence, srs.review(self.effective_schedule(card_id), grade, now, self._preview_scheduler)
+
+    # --- exercises -----------------------------------------------------------
+
+    def current_exercise(self) -> Exercise:
+        """The exercise for the card showing now; fixed for the whole turn."""
+        cid = self._require_current()
+        if self._exercise is None:
+            card = self.cards[cid]
+            rng = random.Random(f"{self.seed}:exercise:{self.turn}:{cid}")
+            made: dict[str, Exercise] = {"flashcard": Exercise("flashcard")}
+            if self.exercise in ("blank", "mixed"):
+                blank = exercises.make_blank(card)
+                if blank:
+                    made["blank"] = Exercise("blank", blank=blank)
+            if self.exercise in ("choice", "blank", "mixed"):
+                choice = exercises.make_choice(card, self.pool, self.direction_for(cid), rng)
+                if choice:
+                    made["choice"] = Exercise("choice", choice=choice)
+            if self.exercise == "mixed":
+                self._exercise = made[rng.choice(sorted(made))]
+            else:
+                fallback = {"blank": ("blank", "choice"), "choice": ("choice",)}.get(self.exercise, ())
+                kind = next((k for k in fallback if k in made), "flashcard")
+                self._exercise = made[kind]
+        return self._exercise
+
+    def check(self, answer) -> dict:
+        """Check an answer to the current exercise: a typed text (blank) or an
+        option index (choice). Once per turn; the result proposes a grade."""
+        ex = self.current_exercise()
+        if self.result is not None:
+            return self.result
+        if ex.kind == "choice":
+            try:
+                picked = int(answer)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("pick one of the options") from exc
+            if not 0 <= picked < len(ex.choice.options):
+                raise ValueError("pick one of the options")
+            verdict = exercises.check_choice(ex.choice, picked)
+            self.result = {"verdict": verdict, "picked": picked,
+                           "expected": ex.choice.options[ex.choice.answer_index]}
+        elif ex.kind == "blank":
+            given = "" if answer is None else str(answer)
+            verdict = exercises.check_typed(given, ex.blank)
+            self.result = {"verdict": verdict, "given": given, "expected": ex.blank.answer}
+        else:
+            raise ValueError("a flashcard has nothing to check")
+        self.result["suggested"] = exercises.SUGGESTED_GRADE[(ex.kind, verdict)]
+        return self.result
 
     # --- actions -------------------------------------------------------------
 
@@ -354,6 +430,9 @@ class ReviewSession:
 
     def _advance(self, *, repeat_current: bool) -> None:
         cid = self.current
+        self.turn += 1
+        self._exercise = None
+        self.result = None
         if self.first_pass and self.first_pass[0] == cid:
             self.first_pass.pop(0)
         if repeat_current:

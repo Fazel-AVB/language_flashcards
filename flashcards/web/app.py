@@ -134,6 +134,10 @@ def create_app(
     def grade():
         return jsonify(service.grade(body().get("grade")))
 
+    @app.post("/api/session/check")
+    def check():
+        return jsonify(service.check(body().get("answer")))
+
     @app.post("/api/session/skip")
     def skip():
         return jsonify(service.skip())

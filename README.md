@@ -14,8 +14,8 @@ app drills German→English and English→Persian with no setting. See
 
 | Screen | Purpose |
 |---|---|
-| **Start** | How many words are due now, new, or scheduled later. Build a deck: *Due now* (the default), chosen topics, all topics, or difficult words. |
-| **Review** | The word on the front; **Space** shows the answer, **1–5** grades it. Each button shows what it will do: the new confidence and the next review date. |
+| **Start** | How many words are due now, new, or scheduled later. Build a deck: *Due now* (the default), chosen topics, all topics, or difficult words, and pick the [exercise](#exercises). |
+| **Review** | A flashcard, a multiple-choice question or a sentence to complete. Then **1–5** grades it; each button shows what it will do: the new confidence and the next review date. |
 | **Summary** | Every graded word, old → new confidence and next review. **Save to workbook** (after a backup) or **Discard**. |
 
 ## Code and data are kept apart
@@ -91,7 +91,32 @@ workbook**. Words you answered well come back days or weeks later; words you mis
 soon.
 
 Keyboard on the Review screen: **Space** / **Enter** show the answer, **1–5** grade, **S** skips,
-**P** pronounces the word.
+**P** pronounces the word. In exercises: **1–4** pick an option, **Enter** checks a typed answer
+and then takes the proposed grade.
+
+### Exercises
+
+Pick one under **Exercise** when you build a deck:
+
+| Exercise | You see | You do |
+|---|---|---|
+| **Flashcards** | the word (or its meaning) | think of the answer, **Show answer**, grade yourself |
+| **Multiple choice** | the word (or its meaning) and four options | pick one (click or **1–4**) |
+| **Fill in the blank** | the word's example sentence with a gap, plus its meaning and the translated example as hints | type the missing word, **Enter** |
+| **Mixed** | any of the three, per card | |
+
+The wrong options come from your own workbook, preferring words of the same type and topic,
+so a noun is not picked out among verbs. The blank is cut from column G (*Example*): the word
+is found even when inflected (`riesig` blanks *riesiges*) or written with placeholders
+(`lash out at someone`). A word whose sentence doesn't contain it, or whose sentence is the
+word itself, gets multiple choice instead.
+
+Typed answers ignore case, spacing and punctuation, and accept `ae`/`oe`/`ue`/`ss` for
+`ä`/`ö`/`ü`/`ß`. A missing accent or one typo counts as **almost**.
+
+**Grading stays yours.** After checking, the app proposes a grade (highlighted; **Enter**
+takes it): right → 4, almost → 3, wrong → 1. Press another number if you were lucky or it
+was effortless. The grade then updates confidence and FSRS exactly as for a flashcard.
 
 ### Pronunciation
 
@@ -281,6 +306,7 @@ flashcards/
   workbook.py             read topic sheets -> Cards (read-only), schedule included
   srs.py                  FSRS: grades -> due dates, the M-R cells, due status
   session.py              deck building and ReviewSession (first pass, repeats, grading)
+  exercises.py            multiple choice and fill-in-the-blank: building and checking
   writeback.py            surgical cell writes into the .xlsx
   config.py               the workbook path and your deck preferences
   paths.py                where settings, backups and the review log live (~/.flashcards)
