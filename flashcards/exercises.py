@@ -1,5 +1,5 @@
 """Exercises built from the workbook itself: multiple choice, fill in the blank,
-type the word (recall) and the German article drill.
+type the word (recall), listening (dictation) and the German article drill.
 
 An exercise only changes *how you answer* a card. After it is checked, the
 app proposes a grade (SUGGESTED_GRADE) and you confirm or override it with
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from .models import Card
 
-KINDS = ("flashcard", "choice", "blank", "recall", "article")
+KINDS = ("flashcard", "choice", "blank", "recall", "listen", "article")
 ARTICLES = ("der", "die", "das")
 CORRECT, CLOSE, WRONG = "correct", "close", "wrong"
 
@@ -31,6 +31,7 @@ SUGGESTED_GRADE = {
     ("choice", CORRECT): 4, ("choice", WRONG): 1,
     ("blank", CORRECT): 4, ("blank", CLOSE): 3, ("blank", WRONG): 1,
     ("recall", CORRECT): 4, ("recall", CLOSE): 3, ("recall", WRONG): 1,
+    ("listen", CORRECT): 4, ("listen", CLOSE): 3, ("listen", WRONG): 1,
     # A wrong article is not a forgotten word: you may well know what it means.
     # 2 ("shaky") keeps it coming back soon without resetting it like 1 would;
     # press 1 yourself if the word meant nothing to you.
@@ -131,7 +132,19 @@ def make_article(card: Card) -> Choice | None:
 def make_recall(card: Card) -> Blank | None:
     """See the meaning, type the word. A Blank with nothing around the gap, so
     check_typed applies the same leniency as fill-in-the-blank."""
-    if not card.term or not card.meaning:
+    if not card.meaning:
+        return None
+    return _typed_word(card)
+
+
+def make_listen(card: Card) -> Blank | None:
+    """Hear the word (spoken by the browser, app.js), type it. Checked like recall;
+    needs no meaning, since the word itself is the prompt."""
+    return _typed_word(card)
+
+
+def _typed_word(card: Card) -> Blank | None:
+    if not card.term:
         return None
     variants = term_variants(card.term)
     article = article_of(card)

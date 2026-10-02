@@ -27,6 +27,7 @@ const EXERCISE_LABELS = {
   choice: "Multiple choice",
   blank: "Fill in the blank",
   recall: "Type the word",
+  listen: "Listening",
   article: "Article (der/die/das)",
   mixed: "Mixed",
 };
@@ -139,14 +140,22 @@ function voiceFor(lang) {
   return match.find((v) => v.localService && v.default) || match.find((v) => v.localService) || match[0] || null;
 }
 
-function speak(text, lang) {
+// Language codes this browser can speak, as allowed by the online-voices setting.
+// Sent with every new session: only the page knows the voices, and the server
+// needs them to decide whether listening is possible (service.start).
+function speakableLanguages() {
+  return [...new Set(speech.voices.filter((v) => v.localService || speech.online)
+    .map((v) => v.lang.toLowerCase().split(/[-_]/)[0]))];
+}
+
+function speak(text, lang, rate = 0.9) {
   const voice = voiceFor(lang);
   if (!voice || !text) return;
   speechSynthesis.cancel();  // a new word interrupts the previous one
   const u = new SpeechSynthesisUtterance(text);
   u.voice = voice;
   u.lang = voice.lang;
-  u.rate = 0.9;  // a little slower than conversation, for learning
+  u.rate = rate;  // default 0.9: a little slower than conversation, for learning
   speechSynthesis.speak(u);
 }
 
@@ -315,11 +324,13 @@ function deckForm(o) {
     h("label", { class: "field", title: "Fill in the blank uses each word's example sentence; a word whose sentence doesn't contain it gets multiple choice instead" },
       "Exercise",
       h("select", { onchange: (e) => set("exercise", e.target.value) },
-        Object.entries(EXERCISE_LABELS).map(([k, v]) => h("option", {
-          value: k, selected: f.exercise === k,
-          // Only offered when column D has der/die/das nouns (service.overview article_words).
-          disabled: k === "article" && !o.article_words,
-        }, k === "article" && o.article_words ? `${v} · ${o.article_words} nouns` : v)))),
+        Object.entries(EXERCISE_LABELS).map(([k, v]) => {
+          // Article: only with der/die/das nouns (service.overview article_words).
+          // Listening: only with a voice for the word's language.
+          const noVoice = k === "listen" && !voiceFor(o.language_codes?.term);
+          return h("option", { value: k, selected: f.exercise === k, disabled: (k === "article" && !o.article_words) || noVoice },
+            k === "article" && o.article_words ? `${v} · ${o.article_words} nouns` : noVoice ? `${v} (no ${o.languages.term} voice)` : v);
+        }))),
     h("label", { class: "field" }, "Order",
       h("select", { title: f.mode === "due" ? "Due words always come most-forgotten first; this orders the new words after them" : null,
         onchange: (e) => set("order", e.target.value) },
@@ -350,7 +361,7 @@ function deckForm(o) {
 function deckParams() {
   const f = state.form;
   return { mode: f.mode, topics: f.mode === "mix" ? [] : f.topics, threshold: f.threshold, order: f.order,
-    direction: f.direction, size: f.size, repeat: f.repeat, exercise: f.exercise };
+    direction: f.direction, size: f.size, repeat: f.repeat, exercise: f.exercise, voices: speakableLanguages() };
 }
 
 async function start() {
@@ -444,6 +455,7 @@ function renderReview(v) {
     if (frontIsTerm) autoSpeak(c.front.text, c.front.lang);
     if (ex.kind === "choice" || ex.kind === "article") card.append(choicePart(ex, null));
     else if (ex.kind === "recall") card.append(blankPart(ex, null));
+    else if (ex.kind === "listen") card.append(listenPart(ex));
     else if (ex.kind === "flashcard") {
       card.append(h("div", { class: "reveal" },
         h("button", { class: "btn primary big wide", id: "show", onclick: reveal }, "Show answer")));
@@ -465,6 +477,7 @@ function renderReview(v) {
   }
 
   const keys = !answered && (ex.kind === "choice" || ex.kind === "article") ? [h("kbd", {}, "1"), "–", h("kbd", {}, String(ex.options.length)), " choose · "]
+    : !answered && ex.kind === "listen" ? [h("kbd", {}, "Enter"), " check · ", h("kbd", {}, "Ctrl"), "+", h("kbd", {}, "Space"), " play again · "]
     : !answered && (ex.kind === "blank" || ex.kind === "recall") ? [h("kbd", {}, "Enter"), " check · "]
     : !answered ? [h("kbd", {}, "Space"), " show answer · "]
     : [h("kbd", {}, "1"), "–", h("kbd", {}, "5"), " grade · "];
@@ -473,7 +486,7 @@ function renderReview(v) {
       h("div", { style: { width: `${pct}%` } })),
     h("div", { class: "caption" },
       h("span", {}, `${p.done} / ${p.total} words graded${p.repeats ? ` · ${p.repeats} repeat${p.repeats === 1 ? "" : "s"} queued` : ""}`),
-      h("span", {}, `${c.topic} · ${EXERCISE_LABELS[ex.kind]}${ex.kind === "blank" ? "" : ` · ${c.direction_label}`}`)),
+      h("span", {}, `${c.topic} · ${EXERCISE_LABELS[ex.kind]}${ex.kind === "blank" || ex.kind === "listen" ? "" : ` · ${c.direction_label}`}`)),
     card,
     h("div", { class: "review-foot" },
       h("button", { class: "btn ghost", onclick: () => act("/api/session/skip"), title: "Next word, no change (S)" }, "Skip"),
@@ -515,6 +528,32 @@ function blankPart(ex, res) {
   // After the page is drawn, so the field exists to focus.
   setTimeout(() => input.focus(), 0);
   return wrap;
+}
+
+// Listening: the word is played once when the card appears (whatever the
+// auto-pronounce setting: here the sound IS the question), then on demand.
+function listenPart(ex) {
+  const play = (rate) => { speak(ex.say, ex.lang, rate); input.focus(); };
+  const input = h("input", { type: "text", class: "gap", autocomplete: "off", autocapitalize: "off", spellcheck: false,
+    "aria-label": "What you heard", size: Math.max(8, Math.min(28, ex.answer_len || 10)),
+    onkeydown: (e) => {
+      if (e.key === "Enter") { e.preventDefault(); check(input.value); }
+      else if (e.key === " " && e.ctrlKey) { e.preventDefault(); play(); }
+    } });
+  const key = `listen:${state.shown}`;
+  if (state.spoken !== key) {
+    state.spoken = key;
+    setTimeout(() => play(), 150);  // after the page is drawn
+  } else {
+    setTimeout(() => input.focus(), 0);
+  }
+  return h("div", { class: "blank" },
+    h("div", { class: "row", style: { justifyContent: "center", margin: ".4rem 0 1rem" } },
+      h("button", { class: "btn big", onclick: () => play() }, "🔊 Play again"),
+      h("button", { class: "btn big", onclick: () => play(0.55), title: "Slower" }, "🐢 Slow")),
+    h("div", { class: "sentence" }, input),
+    ex.hint ? h("div", { class: "blank-hint" }, ex.hint) : null,
+    h("div", { class: "reveal" }, h("button", { class: "btn primary big wide", onclick: () => check(input.value) }, "Check")));
 }
 
 function verdict(res, ex) {

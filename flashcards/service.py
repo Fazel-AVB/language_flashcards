@@ -151,6 +151,11 @@ class Service:
             if self._session is not None:
                 raise UserError("A session is already in progress.")
             data = self._load_reference()
+            # The browser reports which languages it has a voice for (app.js deckParams).
+            can_listen = language_code(data.languages.term) in opts["voices"]
+            if opts["exercise"] == "listen" and not can_listen:
+                raise UserError(f"Listening needs a {data.languages.term} voice in your browser, and there is none. "
+                                "See Pronunciation on the start page for how to add one.")
             config.update_prefs(
                 mode=opts["mode"], topics=opts["topics"], direction=opts["direction"], exercise=opts["exercise"],
                 order=opts["order"], difficult_threshold=opts["threshold"],
@@ -165,7 +170,7 @@ class Service:
             self._session = ReviewSession(
                 deck, direction=opts["direction"], repeat=opts["repeat"], seed=seed,
                 scheduler=srs.make_scheduler(fuzz=self._fuzz),
-                exercise=opts["exercise"], pool=data.cards,
+                exercise=opts["exercise"], pool=data.cards, can_listen=can_listen,
             )
             return self.view()
 
@@ -290,7 +295,8 @@ class Service:
         direction = s.direction_for(card.id)
         # Some exercises fix the side you see: the article drill shows the noun,
         # typing the word shows its meaning.
-        direction = {"article": "term_to_native", "recall": "native_to_term"}.get(ex.kind, direction)
+        direction = {"article": "term_to_native", "recall": "native_to_term",
+                     "listen": "term_to_native"}.get(ex.kind, direction)
         pair = card.languages
         if direction == "term_to_native":
             front = {"text": card.term, "language": pair.term, "rtl": is_rtl(pair.term),
@@ -335,8 +341,12 @@ class Service:
                 # The meaning is already the front; the word type narrows it down
                 # ("to talk" vs "the talk") without giving the word away.
                 exercise.update(hint=card.word_type or "", hint_rtl=False, hint_example="")
-            if ex.kind == "blank" and s.result is None:
-                # The blank card's front is the sentence: the word itself would give it away.
+            if ex.kind == "listen":
+                # say: what the page speaks. Word type only as a hint: the meaning
+                # would let you write the word without listening at all.
+                exercise.update(say=card.term, hint=card.word_type or "", hint_rtl=False, hint_example="")
+            if ex.kind in ("blank", "listen") and s.result is None:
+                # No written word up front: in a blank the sentence is the prompt, in listening the sound is.
                 front = {"text": "", "language": pair.term, "rtl": is_rtl(pair.term),
                          "lang": language_code(pair.term), "hint": ""}
 
@@ -407,6 +417,9 @@ def _deck_options(params: dict) -> dict:
         raise UserError(f"Unknown order {order!r}.")
     if direction not in DIRECTIONS:
         raise UserError(f"Unknown direction {direction!r}.")
+    voices = params.get("voices") or []
+    if not isinstance(voices, list) or not all(isinstance(v, str) for v in voices):
+        raise UserError("voices must be a list of language codes.")
     topics = params.get("topics") or []
     if not isinstance(topics, list) or not all(isinstance(t, str) for t in topics):
         raise UserError("topics must be a list of sheet names.")
@@ -422,6 +435,7 @@ def _deck_options(params: dict) -> dict:
     if not 1 <= size <= MAX_SESSION_SIZE:
         raise UserError(f"Words per session must be between 1 and {MAX_SESSION_SIZE}.")
     return {"mode": mode, "order": order, "direction": direction, "exercise": exercise, "topics": topics,
+            "voices": [v.lower() for v in voices],
             "threshold": threshold, "size": size, "repeat": bool(params.get("repeat", False))}
 
 

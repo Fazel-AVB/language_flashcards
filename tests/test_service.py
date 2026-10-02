@@ -163,3 +163,22 @@ def test_recall_shows_the_meaning(svc):
     assert view["exercise"]["kind"] == "recall"
     assert view["card"]["front"]["text"] == view["card"]["back"]["meaning"]
     assert svc.check(view["card"]["back"]["term"])["result"]["verdict"] == "correct"
+
+
+def test_listening_needs_the_browser_voice(svc):
+    with pytest.raises(UserError, match="needs a German voice"):
+        svc.start({"mode": "mix", "exercise": "listen", "voices": ["en"]})
+    view = svc.start({"mode": "mix", "size": 1, "exercise": "listen", "voices": ["de", "en"]})
+    ex = view["exercise"]
+    assert ex["kind"] == "listen" and ex["say"] == view["card"]["back"]["term"] and ex["lang"] == "de"
+    assert view["card"]["front"]["text"] == ""          # the word is heard, not shown
+    assert svc.check(ex["say"])["result"]["verdict"] == "correct"
+
+
+def test_mixed_without_voice_never_listens(svc):
+    view = svc.start({"mode": "mix", "exercise": "mixed", "voices": []})
+    kinds = set()
+    while view["stage"] == "review":
+        kinds.add(view["exercise"]["kind"])
+        view = svc.skip()
+    assert "listen" not in kinds

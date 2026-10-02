@@ -172,3 +172,20 @@ def test_recall_in_session(cards):
     s = session([card(cards, "werden")], cards, "recall")
     assert s.current_exercise().kind == "recall"
     assert s.check("Werden")["suggested"] == 4
+
+
+# --- listening ---------------------------------------------------------------
+
+def test_listen_needs_a_voice(cards):
+    werden = card(cards, "werden")
+    with_voice = ReviewSession([werden], seed=1, exercise="listen", can_listen=True, scheduler=make_scheduler(fuzz=False))
+    assert with_voice.current_exercise().kind == "listen"
+    assert with_voice.check("werden")["verdict"] == ex.CORRECT
+    # No voice: the deck still works, as "type the word".
+    without = ReviewSession([werden], seed=1, exercise="listen", can_listen=False, scheduler=make_scheduler(fuzz=False))
+    assert without.current_exercise().kind == "recall"
+
+
+def test_listen_works_without_meaning(cards):
+    assert ex.make_listen(replace(cards[0], meaning="")) is not None
+    assert ex.make_recall(replace(cards[0], meaning="")) is None

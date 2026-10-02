@@ -33,9 +33,10 @@ DIRECTIONS = ("mixed", "term_to_native", "native_to_term")
 # example sentence containing the word, nothing to build distractors from)
 # falls back: blank -> choice -> flashcard. "article" decks contain only
 # der/die/das nouns (service.Service._build filters them), so it never falls back.
-EXERCISES = ("flashcard", "choice", "blank", "recall", "article", "mixed")
+EXERCISES = ("flashcard", "choice", "blank", "recall", "listen", "article", "mixed")
 # What each choice falls back to, in order; "flashcard" is always possible.
 _FALLBACK = {"choice": ("choice",), "blank": ("blank", "choice"), "recall": ("recall",),
+             "listen": ("listen", "recall"),
              "article": ("article", "choice")}
 
 
@@ -43,7 +44,7 @@ _FALLBACK = {"choice": ("choice",), "blank": ("blank", "choice"), "recall": ("re
 class Exercise:
     kind: str                               # exercises.KINDS
     choice: exercises.Choice | None = None  # choice and article
-    blank: exercises.Blank | None = None    # blank and recall
+    blank: exercises.Blank | None = None    # blank, recall and listen
 
 # Sampling weight = (5.5 - score) ** 2, so score 1 is 81x likelier to be drawn
 # than score 5, and an ungraded word outranks everything.
@@ -254,6 +255,10 @@ class ReviewSession:
     # Where multiple-choice distractors come from: the whole workbook, not just
     # the deck, so a 5-word deck still gets varied options. None = the deck.
     pool: list[Card] | None = None
+    # Whether the browser can speak the word's language (it reports its voices
+    # at session start, service.start). False keeps listening out of Mixed and
+    # turns a listening deck into "type the word".
+    can_listen: bool = False
 
     def __post_init__(self) -> None:
         if not self.deck:
@@ -343,6 +348,8 @@ class ReviewSession:
                 made["blank"] = Exercise("blank", blank=blank)
             if "recall" in wanted and (recall := exercises.make_recall(card)):
                 made["recall"] = Exercise("recall", blank=recall)
+            if "listen" in wanted and self.can_listen and (listen := exercises.make_listen(card)):
+                made["listen"] = Exercise("listen", blank=listen)
             if "article" in wanted and (article := exercises.make_article(card)):
                 made["article"] = Exercise("article", choice=article)
             if "choice" in wanted and (choice := exercises.make_choice(card, self.pool, self.direction_for(cid), rng)):
@@ -370,7 +377,7 @@ class ReviewSession:
             verdict = exercises.check_choice(ex.choice, picked)
             self.result = {"verdict": verdict, "picked": picked,
                            "expected": ex.choice.options[ex.choice.answer_index]}
-        elif ex.kind in ("blank", "recall"):
+        elif ex.kind in ("blank", "recall", "listen"):
             given = "" if answer is None else str(answer)
             verdict = exercises.check_typed(given, ex.blank)
             self.result = {"verdict": verdict, "given": given, "expected": ex.blank.answer}

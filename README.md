@@ -104,6 +104,7 @@ Pick one under **Exercise** when you build a deck:
 | **Multiple choice** | the word (or its meaning) and four options | pick one (click or **1–4**) |
 | **Fill in the blank** | the word's example sentence with a gap, plus its meaning and the translated example as hints | type the missing word, **Enter** |
 | **Type the word** | the meaning and the word type | type the word, **Enter** (with or without its article: `die Kerze` and `Kerze` both count) |
+| **Listening** | nothing written: the word is spoken (🔊 *Play again*, 🐢 *Slow*, **Ctrl+Space**), with its word type as a hint | type what you heard, **Enter**. Needs a voice for the word's language ([Pronunciation](#pronunciation)); without one the option is greyed out |
 | **Article (der/die/das)** | a German noun | pick **der / die / das** (click or **1–3**). Only nouns whose column D is exactly der, die or das are in this deck; the option is greyed out for a workbook with none |
 | **Mixed** | any of the above, per card | |
 
@@ -134,6 +135,9 @@ the computer: nothing to install, works offline.
 - Windows has no installable Persian voice. Ticking *Also use online voices* lets Edge use its
   online voices (Persian included). Those send the text to Microsoft (Edge) or Google
   (Chrome), so they are off by default.
+- **Listening** plays the word even with *Pronounce automatically* off: there, the sound is
+  the question. *Mixed* includes listening only when the browser has a voice for the word's
+  language.
 - The language is taken from the names in A1/B1 (`German` → `de`, …; list in
   `models.LANGUAGE_CODES`).
 
@@ -309,7 +313,7 @@ flashcards/
   workbook.py             read topic sheets -> Cards (read-only), schedule included
   srs.py                  FSRS: grades -> due dates, the M-R cells, due status
   session.py              deck building and ReviewSession (first pass, repeats, grading)
-  exercises.py            the exercises (choice, blank, type the word, article): building and checking
+  exercises.py            the exercises (choice, blank, type the word, listening, article): building and checking
   writeback.py            surgical cell writes into the .xlsx
   config.py               the workbook path and your deck preferences
   paths.py                where settings, backups and the review log live (~/.flashcards)
