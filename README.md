@@ -86,6 +86,9 @@ opens on `http://127.0.0.1:8767`, which only this computer can reach. Starting i
 runs just reopens the page. To stop it, press **Quit**; it also stops by itself 10 minutes after
 you close the tab. Errors are logged to `~/.flashcards/gui.log`.
 
+The theme menu in the top bar switches between **Light**, **Dark** and **System** (follows
+your computer's light/dark setting, the default). It is remembered per browser.
+
 A normal day: open the app, press **Start review** on *Due now*, grade each word, **Save to
 workbook**. Words you answered well come back days or weeks later; words you missed come back
 soon.
@@ -336,7 +339,7 @@ flashcards/
   web/
     launcher.py           start the local server, open the browser, stop when idle
     app.py                the JSON API on 127.0.0.1, with host and key checks
-    static/               the page: index.html, app.js, style.css, logo.svg, flashcards.ico
+    static/               the page: index.html, app.js, theme.js, style.css, logo.svg, flashcards.ico
 tests/                    pytest, no browser needed (one synthetic workbook per language pair)
 experiments/              executable notebooks demonstrating the tool (see below)
 docs/                     the overview figure and the icon, with the scripts that draw them

@@ -6,6 +6,8 @@
   <title>Flashcards</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
+  <!-- Before the stylesheet: sets the theme before the first paint (theme.js). -->
+  <script src="/static/theme.js"></script>
   <link rel="stylesheet" href="/static/style.css">
   <!-- Replaced by the server on every launch (app.py, TOKEN_PLACEHOLDER); app.js sends it with each request. -->
   <meta name="fc-token" content="__FC_TOKEN__">
@@ -17,6 +19,11 @@
       <span id="brand-name">Flashcards</span>
       <span id="pair" class="chip" hidden></span>
     </div>
+    <select id="theme" title="Colour theme" aria-label="Colour theme">
+      <option value="system">◐ System</option>
+      <option value="light">☀ Light</option>
+      <option value="dark">☾ Dark</option>
+    </select>
     <button id="quit" class="btn ghost small" title="Stop the app (it also stops by itself 10 minutes after you close this tab)">Quit</button>
   </header>
 

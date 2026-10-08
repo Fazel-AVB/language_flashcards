@@ -765,6 +765,11 @@ function renderSaved(v) {
 // start-up
 // ---------------------------------------------------------------------------
 
+// The theme picker in the top bar; theme.js (loaded in <head>) owns the setting.
+const themePicker = document.getElementById("theme");
+themePicker.value = window.fcTheme.get();
+themePicker.addEventListener("change", (e) => window.fcTheme.set(e.target.value));
+
 document.getElementById("quit").addEventListener("click", async () => {
   if (state.view?.stage === "review" || state.view?.stage === "summary") {
     if (!confirm("This session's grades are not saved yet. Quit anyway?")) return;

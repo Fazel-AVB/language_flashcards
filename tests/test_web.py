@@ -61,7 +61,7 @@ class TestSecurity:
         assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
 
     def test_static_files_served(self, client):
-        for path in ["/static/app.js", "/static/style.css", "/static/logo.svg", "/favicon.ico"]:
+        for path in ["/static/app.js", "/static/theme.js", "/static/style.css", "/static/logo.svg", "/favicon.ico"]:
             assert client.get(path).status_code == 200, path
 
 

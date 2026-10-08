@@ -1,9 +1,19 @@
 /* Teal, so Flashcards and Time Tracker (violet) are told apart at a glance;
-   layout and component names follow time_tracker's style.css. */
+   layout and component names follow time_tracker's style.css.
+
+   Themes: every colour below is a variable, and the rules further down use
+   only these variables. Light is :root; dark overrides the same names under
+   data-theme="dark", which theme.js sets on <html> (it also resolves
+   "System" to light or dark). A new rule must use a variable, never a hex
+   value, or it will look wrong in one of the two themes. */
 :root {
   --primary: #0F766E;
+  --primary-hover: #134E4A;   /* background of a hovered primary button */
+  /* Not only a dark shade: used as the accent TEXT colour on surfaces
+     (headings, labels), so in the dark theme it is a light teal. */
   --primary-dark: #134E4A;
   --primary-soft: #CCFBF1;
+  --on-accent: #FFFFFF;       /* text on a filled --primary or grade-colour background */
   --bg: #F0FDFA;
   --surface: #FFFFFF;
   --text: #042F2E;
@@ -15,10 +25,42 @@
   --err-bg: #FEE2E2;
   --warn-bg: #FEF3C7;
   --warn: #92400E;
+  --warn-border: #F59E0B;
+  --new-border: #FCD34D;
+  --shadow: rgba(4, 47, 46, .06);
+  --overlay: rgba(4, 47, 46, .55);
   /* Grade buttons, 1 (red) to 5 (green): the colour says how it went. */
   --g1: #DC2626; --g2: #EA580C; --g3: #CA8A04; --g4: #16A34A; --g5: #0F766E;
   --radius: 12px;
   color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  /* Bright teal with dark text on it: white on a mid teal is too low-contrast. */
+  --primary: #2DD4BF;
+  --primary-hover: #5EEAD4;
+  --primary-dark: #99F6E4;
+  --primary-soft: #134E4A;
+  --on-accent: #0B1514;
+  --bg: #0B1514;
+  --surface: #142422;
+  --text: #E3F2EF;
+  --muted: #8FB3AD;
+  --border: #2B4B47;
+  --ok: #34D399;
+  --ok-bg: #0F3A2C;
+  --err: #F87171;
+  --err-bg: #3B1517;
+  --warn-bg: #3A2A0B;
+  --warn: #FBBF24;
+  --warn-border: #D97706;
+  --new-border: #B45309;
+  --shadow: rgba(0, 0, 0, .35);
+  --overlay: rgba(0, 0, 0, .65);
+  /* Same red-to-green order, lighter so the numbers read on a dark card. */
+  --g1: #F87171; --g2: #FB923C; --g3: #FACC15; --g4: #4ADE80; --g5: #2DD4BF;
+  /* Dark scrollbars, checkboxes and dropdown lists from the browser. */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -41,11 +83,13 @@ code { background: var(--primary-soft); padding: .05rem .35rem; border-radius: 4
   padding: .55rem 1.2rem; background: var(--primary-soft); border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; align-items: center; gap: .55rem; font-weight: 700; font-size: 1.1rem; color: var(--primary-dark); flex: 1; min-width: 0; }
+/* The general select rule below is full-width for form fields; the theme picker is not. */
+.topbar select { width: auto; padding: .25rem .5rem; font-size: .85rem; }
 .logo { width: 34px; height: 34px; border-radius: 8px; }
 .logo.big { width: 72px; height: 72px; border-radius: 16px; }
 .chip { display: inline-block; font-size: .78rem; font-weight: 600; padding: 2px 10px; border-radius: 99px; background: var(--surface); border: 1px solid var(--border); color: var(--primary-dark); white-space: nowrap; }
-.chip.due { background: var(--primary); border-color: var(--primary); color: #fff; }
-.chip.new { background: var(--warn-bg); border-color: #FCD34D; color: var(--warn); }
+.chip.due { background: var(--primary); border-color: var(--primary); color: var(--on-accent); }
+.chip.new { background: var(--warn-bg); border-color: var(--new-border); color: var(--warn); }
 
 main { max-width: 860px; margin: 0 auto; padding: 1.2rem 1.2rem 3rem; }
 footer { max-width: 860px; margin: 0 auto; padding: 0 1.2rem 1.5rem; color: var(--muted); font-size: .8rem; }
@@ -57,8 +101,8 @@ footer { max-width: 860px; margin: 0 auto; padding: 0 1.2rem 1.5rem; color: var(
 }
 .btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-.btn.primary:hover:not(:disabled) { background: var(--primary-dark); color: #fff; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-accent); }
+.btn.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-accent); }
 .btn.ghost { background: transparent; }
 .btn.small { padding: .25rem .6rem; font-size: .85rem; }
 .btn.big { padding: .8rem 1.4rem; font-size: 1.05rem; }
@@ -89,7 +133,7 @@ label.check { display: inline-flex; gap: .45rem; align-items: center; cursor: po
 .msg { display: flex; gap: .6rem; align-items: center; padding: .6rem .9rem; border-radius: var(--radius); margin-bottom: .8rem; border-left: 4px solid var(--primary); background: var(--surface); }
 .msg.ok { background: var(--ok-bg); border-color: var(--ok); }
 .msg.err { background: var(--err-bg); border-color: var(--err); }
-.msg.warn { background: var(--warn-bg); border-color: #F59E0B; }
+.msg.warn { background: var(--warn-bg); border-color: var(--warn-border); }
 .msg .grow { flex: 1; overflow-wrap: anywhere; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.2rem; }
 .card + .card, .card + h3 { margin-top: 1rem; }
@@ -101,12 +145,12 @@ label.check { display: inline-flex; gap: .45rem; align-items: center; cursor: po
 .tile .v { font-size: 1.9rem; font-weight: 700; color: var(--primary); line-height: 1.2; }
 .tile .d { font-size: .8rem; color: var(--muted); }
 .tile.hero { background: var(--primary); border-color: var(--primary); }
-.tile.hero .k, .tile.hero .v, .tile.hero .d { color: #fff; }
+.tile.hero .k, .tile.hero .v, .tile.hero .d { color: var(--on-accent); }
 
 .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { border: 0; background: var(--surface); padding: .45rem .9rem; font: inherit; cursor: pointer; color: var(--primary-dark); }
 .seg button + button { border-left: 1px solid var(--border); }
-.seg button[aria-pressed="true"] { background: var(--primary); color: #fff; }
+.seg button[aria-pressed="true"] { background: var(--primary); color: var(--on-accent); }
 .topic-list { display: flex; flex-wrap: wrap; gap: .4rem; }
 .topic-list label { border: 1px solid var(--border); border-radius: 99px; padding: .2rem .7rem; background: var(--surface); font-size: .88rem; }
 .topic-list label:has(input:checked) { background: var(--primary-soft); border-color: var(--primary); }
@@ -127,7 +171,7 @@ tr:last-child td { border-bottom: 0; }
 .progress { height: 8px; background: var(--primary-soft); border-radius: 99px; overflow: hidden; margin: .4rem 0 .3rem; }
 .progress > div { height: 100%; background: var(--primary); transition: width .25s; }
 .caption { display: flex; justify-content: space-between; gap: .5rem; flex-wrap: wrap; font-size: .85rem; color: var(--muted); margin-bottom: .8rem; }
-.flash-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 1.6rem 1.4rem; box-shadow: 0 2px 10px rgba(4,47,46,.06); }
+.flash-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 1.6rem 1.4rem; box-shadow: 0 2px 10px var(--shadow); }
 .front { font-size: 2.4rem; font-weight: 700; line-height: 1.25; text-align: center; overflow-wrap: anywhere; margin: .6rem 0; }
 .front-row { display: flex; align-items: center; justify-content: center; gap: .4rem; }
 .front-row.start { justify-content: flex-start; }
@@ -152,9 +196,9 @@ tr:last-child td { border-bottom: 0; }
   font: inherit; cursor: pointer; border-radius: 10px; padding: .6rem .3rem; text-align: center;
   background: var(--surface); border: 2px solid var(--gc); color: var(--text);
 }
-.grade:hover, .grade:focus-visible { background: var(--gc); color: #fff; }
+.grade:hover, .grade:focus-visible { background: var(--gc); color: var(--on-accent); }
 .grade b { display: block; font-size: 1.2rem; color: var(--gc); }
-.grade:hover b, .grade:focus-visible b { color: #fff; }
+.grade:hover b, .grade:focus-visible b { color: var(--on-accent); }
 .grade .gl { display: block; font-size: .82rem; font-weight: 600; }
 .grade .gn { display: block; font-size: .72rem; opacity: .8; margin-top: .15rem; }
 /* --- exercises ---------------------------------------------------------- */
@@ -194,14 +238,14 @@ input.gap { display: inline-block; width: auto; min-width: 6ch; font-size: 1.2re
 }
 .tile-btn:hover { border-color: var(--primary); }
 .tile-btn.ghost { visibility: hidden; }
-.grade.suggested { background: var(--gc); color: #fff; box-shadow: 0 0 0 3px var(--primary-soft); }
-.grade.suggested b { color: #fff; }
+.grade.suggested { background: var(--gc); color: var(--on-accent); box-shadow: 0 0 0 3px var(--primary-soft); }
+.grade.suggested b { color: var(--on-accent); }
 .review-foot { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
 .keys { font-size: .78rem; color: var(--muted); text-align: center; margin-top: .8rem; }
 kbd { font: inherit; font-size: .75rem; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3rem; background: var(--surface); }
 
 /* --- overlay (app stopped) --------------------------------------------- */
-.overlay { position: fixed; inset: 0; z-index: 100; background: rgba(4,47,46,.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.overlay { position: fixed; inset: 0; z-index: 100; background: var(--overlay); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .overlay-box { background: var(--surface); border-radius: 16px; padding: 2rem; max-width: 440px; text-align: center; }
 .overlay-box h2 { margin: 1rem 0 .5rem; }
 
