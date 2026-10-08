@@ -23,6 +23,11 @@ from .workbook import WorkbookError, load_cards
 #                                       to ~24 min if every word climbs to 5 (a
 #                                       word at 1 needs 4 passes under averaging);
 #                                       also Anki's long-standing new-cards/day
+#   new_per_session 5                -> slots kept for new words in "due" mode: a
+#                                       quarter of a 20-word session, so reviews
+#                                       still dominate, and a backlog of ~60 new
+#                                       words is scheduled in about two weeks of
+#                                       daily sessions
 DEFAULT_PREFS = {
     "mode": "due",  # | "topic" | "mix" | "difficult"
     "exercise": "flashcard",  # | "choice" | "blank" | "mixed"  (session.EXERCISES)
@@ -32,6 +37,7 @@ DEFAULT_PREFS = {
     "order": "weighted",  # | "lowest_confidence_first" | "random" | "oldest_first"
     "repeat_until_mastered": False,
     "session_size": 20,
+    "new_per_session": 5,
 }
 
 # Pre-multilingual config.json files store language-coded directions. Migrated on

@@ -137,7 +137,9 @@ class Service:
         opts = _deck_options(params)
         data = self._load_reference()
         pool = self._build(data, opts, seed=0, limit=None)
-        drawn = pool[: opts["size"]]
+        # Built again with the limit, not sliced from `pool`: in "due" mode the
+        # limit is what reserves slots for new words (session._due_first).
+        drawn = self._build(data, opts, seed=0, limit=opts["size"])
         now = self._now()
         return {
             "in_scope": len(pool),
@@ -161,6 +163,7 @@ class Service:
                 mode=opts["mode"], topics=opts["topics"], direction=opts["direction"], exercise=opts["exercise"],
                 order=opts["order"], difficult_threshold=opts["threshold"],
                 repeat_until_mastered=opts["repeat"], session_size=opts["size"],
+                new_per_session=opts["new_per_session"],
             )
             seed = random.randrange(2**31)
             deck = self._build(data, opts, seed=seed, limit=opts["size"])
@@ -187,6 +190,7 @@ class Service:
             cards, mode=opts["mode"], topics=opts["topics"],
             difficult_threshold=opts["threshold"], order=opts["order"],
             seed=seed, limit=limit, now=self._now(), local_tz=self._tz,
+            new_per_session=opts["new_per_session"],
         )
 
     # ------------------------------------------------------------------ #
@@ -444,15 +448,20 @@ def _deck_options(params: dict) -> dict:
     try:
         threshold = int(params.get("threshold", 2))
         size = int(params.get("size", 20))
+        new_per_session = int(params.get("new_per_session", config.DEFAULT_PREFS["new_per_session"]))
     except (TypeError, ValueError) as exc:
-        raise UserError("threshold and size must be whole numbers.") from exc
+        raise UserError("threshold, size and new words per session must be whole numbers.") from exc
     if not CONFIDENCE_MIN <= threshold <= CONFIDENCE_MAX:
         raise UserError("The difficulty threshold must be between 1 and 5.")
     if not 1 <= size <= MAX_SESSION_SIZE:
         raise UserError(f"Words per session must be between 1 and {MAX_SESSION_SIZE}.")
+    # Above `size` is allowed and acts as `size` (session._due_first caps it).
+    if not 0 <= new_per_session <= MAX_SESSION_SIZE:
+        raise UserError(f"New words per session must be between 0 and {MAX_SESSION_SIZE}.")
     return {"mode": mode, "order": order, "direction": direction, "exercise": exercise, "topics": topics,
             "voices": [v.lower() for v in voices],
-            "threshold": threshold, "size": size, "repeat": bool(params.get("repeat", False))}
+            "threshold": threshold, "size": size, "new_per_session": new_per_session,
+            "repeat": bool(params.get("repeat", False))}
 
 
 def _back(card: Card) -> dict:

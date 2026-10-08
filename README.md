@@ -186,6 +186,11 @@ ratings map onto your five buttons:
   after *Again*). Four "Easy" presses in a row are not four spaced recalls.
 - **Due now** shows the due words first, the ones you are most likely to have forgotten at the
   top, then words never scheduled, up to *Words per session*. Words due later are left out.
+- **New words get their own slots.** *New words per session* (default 5) keeps that many places
+  for words never scheduled, even when more words are due, so new words keep coming in on busy
+  days. Slots nobody needs go to the other kind: with only 2 new words left, the other 3 go to
+  due words, and with few words due, more new ones fill the session. Set it to 0 to give new
+  words only what the due words leave.
 - Grades are fuzzed by a few percent, so words learned on the same day don't all fall due on
   the same later day.
 - Every saved grade is also appended to `~/.flashcards/reviews.csv`. The app doesn't read it

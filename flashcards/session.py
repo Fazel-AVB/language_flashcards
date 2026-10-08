@@ -82,6 +82,7 @@ def build_deck(
     limit: int | None = None,
     now: datetime | None = None,
     local_tz: tzinfo | None = None,
+    new_per_session: int = 0,
 ) -> list[Card]:
     """Filter and order the cards for one review session.
 
@@ -89,7 +90,9 @@ def build_deck(
       "due"       -> words whose FSRS schedule is due (lowest estimated recall
                      first), then never-scheduled words in `order`; words
                      scheduled for later are left out. Honours `topics` if given.
-                     Needs `now`.
+                     Needs `now`. With a `limit`, `new_per_session` slots are
+                     kept for new words even when more words are due (see
+                     `_due_first`).
       "topic"     -> only the sheets in `topics`
       "mix"       -> every topic
       "difficult" -> only cards with confidence <= difficult_threshold
@@ -106,6 +109,8 @@ def build_deck(
         raise ValueError(f"unknown order: {order!r}")
     if limit is not None and limit < 1:
         raise ValueError(f"limit must be >= 1, got {limit}")
+    if new_per_session < 0:
+        raise ValueError(f"new_per_session must be >= 0, got {new_per_session}")
 
     selected = list(cards)
 
@@ -122,21 +127,35 @@ def build_deck(
     if mode == "due":
         if now is None:
             raise ValueError("mode 'due' needs `now`")
-        ordered = _due_first(selected, order, seed, now, local_tz)
+        ordered = _due_first(selected, order, seed, now, local_tz, limit, new_per_session)
     else:
         ordered = _order(selected, order, seed)
     return ordered if limit is None else ordered[:limit]
 
 
 def _due_first(cards: list[Card], order: str, seed: int | None,
-               now: datetime, local_tz: tzinfo | None) -> list[Card]:
+               now: datetime, local_tz: tzinfo | None,
+               limit: int | None, new_per_session: int) -> list[Card]:
+    """Due words, then new words, with `new_per_session` slots reserved for new ones.
+
+    Without the reservation new words only got the slots left after every
+    due word, so on any day with `limit` or more words due none came in at
+    all, and words never scheduled waited indefinitely (Anki avoids this
+    with its separate new-cards-per-day limit). Unused reserved slots go
+    back to due words, and unused due slots to more new words, so the
+    reservation never makes a session shorter.
+    """
     scheduler = srs.make_scheduler(fuzz=False)
     due = [c for c in cards if srs.status(c.schedule, now, local_tz) == srs.DUE]
     # Most forgotten first, so a session cut short by the limit still covers
     # the words closest to being lost. Ties (e.g. same-minute learning steps) by due time.
     due.sort(key=lambda c: (srs.retrievability(c.schedule, now, scheduler) or 0.0, c.schedule.due))
-    new = [c for c in cards if c.schedule is None]
-    return due + _order(new, order, seed)
+    new = _order([c for c in cards if c.schedule is None], order, seed)
+    if limit is None:
+        return due + new
+    reserved = min(new_per_session, len(new), limit)
+    taken_due = due[: limit - reserved]
+    return taken_due + new[: limit - len(taken_due)]
 
 
 def _order(cards: list[Card], order: str, seed: int | None) -> list[Card]:

@@ -106,3 +106,39 @@ def test_due_mode_orders_due_then_new_and_hides_later(cards):
 def test_due_mode_needs_now(cards):
     with pytest.raises(ValueError, match="now"):
         build_deck(cards, mode="due")
+
+
+def _three_due_one_new(cards):
+    """Stift, Bericht and werden overdue (reviewed 60/30/10 days ago); riesig never scheduled."""
+    sched = srs.make_scheduler(fuzz=False)
+    ago = {"Stift": 60, "Bericht": 30, "werden": 10}
+    return [replace(c, schedule=srs.review(None, 5, NOW - timedelta(days=ago[c.term]), sched))
+            if c.term in ago else c for c in cards]
+
+
+def test_due_mode_reserves_slots_for_new_words(cards):
+    # Without the reservation a session full of due words never reaches a new word.
+    cards = _three_due_one_new(cards)
+    deck = build_deck(cards, mode="due", now=NOW, seed=1, limit=2, new_per_session=1)
+    assert [c.term for c in deck] == ["Stift", "riesig"]  # most forgotten due word, then the new one
+
+
+def test_due_mode_without_reservation_fills_with_due_first(cards):
+    cards = _three_due_one_new(cards)
+    deck = build_deck(cards, mode="due", now=NOW, seed=1, limit=2, new_per_session=0)
+    assert [c.term for c in deck] == ["Stift", "Bericht"]
+
+
+def test_unused_reservation_never_shortens_the_session(cards):
+    cards = _three_due_one_new(cards)
+    # Quota 3 but only one new word: the other two slots go to due words.
+    deck = build_deck(cards, mode="due", now=NOW, seed=1, limit=3, new_per_session=3)
+    assert [c.term for c in deck] == ["Stift", "Bericht", "riesig"]
+    # Quota above the limit: capped at the limit.
+    deck = build_deck(cards, mode="due", now=NOW, seed=1, limit=1, new_per_session=5)
+    assert [c.term for c in deck] == ["riesig"]
+
+
+def test_new_per_session_must_not_be_negative(cards):
+    with pytest.raises(ValueError, match="new_per_session"):
+        build_deck(cards, mode="due", now=NOW, new_per_session=-1)

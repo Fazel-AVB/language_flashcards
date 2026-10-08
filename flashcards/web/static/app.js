@@ -202,6 +202,8 @@ async function load() {
       mode: p.mode, topics: p.topics || [], threshold: p.difficult_threshold, order: p.order,
       direction: p.direction, size: p.session_size, repeat: p.repeat_until_mastered,
       exercise: p.exercise || "flashcard",
+      // ?? not ||: 0 is a valid choice (new words only in leftover slots).
+      newPerSession: p.new_per_session ?? 5,
     };
   }
   // Topics renamed or removed in the workbook since they were saved.
@@ -347,6 +349,10 @@ function deckForm(o) {
     h("label", { class: "field" }, "Words per session",
       h("input", { type: "number", min: 1, max: 500, step: 5, value: f.size,
         onchange: (e) => set("size", Math.max(1, Math.min(500, parseInt(e.target.value, 10) || 20))) })),
+    f.mode === "due" ? h("label", { class: "field", title: "Kept for words never scheduled, even when more words are due. 0: new words only fill what the due words leave." },
+      "New words per session",
+      h("input", { type: "number", min: 0, max: 500, step: 1, value: f.newPerSession,
+        onchange: (e) => { const n = parseInt(e.target.value, 10); set("newPerSession", Math.max(0, Math.min(500, Number.isNaN(n) ? 5 : n))); } })) : null,
     f.mode === "difficult" ? h("label", { class: "field" }, "“Difficult” means confidence ≤",
       h("select", { onchange: (e) => set("threshold", parseInt(e.target.value, 10)) },
         [1, 2, 3, 4, 5].map((n) => h("option", { value: n, selected: f.threshold === n }, n)))) : null);
@@ -367,7 +373,8 @@ function deckForm(o) {
 function deckParams() {
   const f = state.form;
   return { mode: f.mode, topics: f.mode === "mix" ? [] : f.topics, threshold: f.threshold, order: f.order,
-    direction: f.direction, size: f.size, repeat: f.repeat, exercise: f.exercise, voices: speakableLanguages() };
+    direction: f.direction, size: f.size, repeat: f.repeat, exercise: f.exercise, voices: speakableLanguages(),
+    new_per_session: f.newPerSession };
 }
 
 async function start() {

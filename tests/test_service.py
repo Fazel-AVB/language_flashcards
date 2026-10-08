@@ -203,3 +203,12 @@ def test_forms_deck_only_drillable_words(svc):
     ex = view["exercise"]
     assert ex["kind"] == "forms" and ex["label"].startswith("Perfekt") and ex["prompt"] == "werden"
     assert svc.check("geworden")["result"]["verdict"] == "close"
+
+
+def test_new_per_session_validated_and_remembered(svc):
+    with pytest.raises(UserError, match="New words per session"):
+        svc.scope({"mode": "due", "new_per_session": -1})
+    with pytest.raises(UserError, match="whole numbers"):
+        svc.scope({"mode": "due", "new_per_session": "many"})
+    svc.start({"mode": "due", "size": 20, "new_per_session": 3})
+    assert config.load_config()["prefs"]["new_per_session"] == 3
