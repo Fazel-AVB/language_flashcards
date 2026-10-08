@@ -86,8 +86,10 @@ opens on `http://127.0.0.1:8767`, which only this computer can reach. Starting i
 runs just reopens the page. To stop it, press **Quit**; it also stops by itself 10 minutes after
 you close the tab. Errors are logged to `~/.flashcards/gui.log`.
 
-The theme menu in the top bar switches between **Light**, **Dark** and **System** (follows
-your computer's light/dark setting, the default). It is remembered per browser.
+The theme menu in the top bar switches between **Light**, **Dark**, **Sepia** and **System**
+(follows your computer's light/dark setting, the default). It is remembered per browser.
+**Sepia** (dark brown on warm paper) is the easiest on the eyes for long sessions in a lit
+room; **Dark** suits a dim one.
 
 A normal day: open the app, press **Start review** on *Due now*, grade each word, **Save to
 workbook**. Words you answered well come back days or weeks later; words you missed come back

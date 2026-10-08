@@ -2,10 +2,10 @@
    layout and component names follow time_tracker's style.css.
 
    Themes: every colour below is a variable, and the rules further down use
-   only these variables. Light is :root; dark overrides the same names under
-   data-theme="dark", which theme.js sets on <html> (it also resolves
-   "System" to light or dark). A new rule must use a variable, never a hex
-   value, or it will look wrong in one of the two themes. */
+   only these variables. Light is :root; dark and sepia override the same
+   names under data-theme="dark" / "sepia", which theme.js sets on <html>
+   (it also resolves "System" to light or dark). A new rule must use a variable, never a hex
+   value, or it will look wrong in one of the themes. */
 :root {
   --primary: #0F766E;
   --primary-hover: #134E4A;   /* background of a hovered primary button */
@@ -61,6 +61,36 @@
   --g1: #F87171; --g2: #FB923C; --g3: #FACC15; --g4: #4ADE80; --g5: #2DD4BF;
   /* Dark scrollbars, checkboxes and dropdown lists from the browser. */
   color-scheme: dark;
+}
+
+/* Sepia, for long sessions: dark brown on warm paper. Dark-on-light still
+   (it reads better than light-on-dark in a lit room), but with less
+   brightness and contrast than Light, and less blue. The teal accent is
+   muted so it doesn't glare on the warm background. */
+:root[data-theme="sepia"] {
+  --primary: #2F6B63;
+  --primary-hover: #24524C;
+  --primary-dark: #2A4A45;
+  --primary-soft: #E9DFC6;
+  --on-accent: #FBF6EA;
+  --bg: #F4ECD8;
+  --surface: #FBF6EA;
+  --text: #3B2F22;
+  --muted: #7A6650;
+  --border: #D9C9A8;
+  --ok: #3F6B2E;
+  --ok-bg: #E3E6C6;
+  --err: #9B2C2C;
+  --err-bg: #F2D8C8;
+  --warn-bg: #F3E2B8;
+  --warn: #7A4E0E;
+  --warn-border: #C98A2B;
+  --new-border: #D9B45A;
+  --shadow: rgba(59, 47, 34, .08);
+  --overlay: rgba(59, 47, 34, .5);
+  /* Red to green as in the other themes, shifted warmer to sit on paper. */
+  --g1: #B83A2E; --g2: #C2611F; --g3: #A07510; --g4: #4E7F2E; --g5: #2F6B63;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
