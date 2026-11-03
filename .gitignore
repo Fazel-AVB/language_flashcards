@@ -2,7 +2,7 @@
 config.json
 backups/
 # Your own workbook, if you keep it in the clone.
-data/
+/data/
 experiments/_demo/
 __pycache__/
 *.pyc

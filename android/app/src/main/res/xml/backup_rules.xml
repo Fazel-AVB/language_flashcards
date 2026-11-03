@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older: back up settings and the review log; workbook backups are copies, skip them. -->
+<full-backup-content>
+    <exclude domain="file" path="backups/" />
+</full-backup-content>
