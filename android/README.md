@@ -14,7 +14,9 @@ There is no Play Store listing; you install the APK file directly ("sideloading"
    (or the repository's **Releases** page → newest *Flashcards for Android* → **Flashcards.apk**).
 2. Open the downloaded file. Android asks once to allow installing apps from that source (your
    browser or file manager): allow it.
-3. To update, install a newer APK the same way. Your settings and an unsaved session are kept.
+3. To update, install a newer APK the same way, over the installed app. Your settings and an
+   unsaved session are kept. (Builds before 0.1.6 were each signed with a different key and
+   cannot be updated over: uninstall such a one once.)
 
 Android 8.0 or newer. No permissions are requested.
 
@@ -75,8 +77,9 @@ then *Run*. Or on the command line, with the Android SDK installed:
 ./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk
 ```
 
-The release APK is signed with the debug key so it can be sideloaded. A Play Store release would
-need its own signing key.
+CI signs the release APK with the key in the repository secrets `SIGNING_KEYSTORE_BASE64` (the
+keystore file, base64) and `SIGNING_PASSWORD`, so every build installs over the previous one.
+Without them it falls back to a throwaway debug key, and each build must be installed fresh.
 
 ## Layout
 

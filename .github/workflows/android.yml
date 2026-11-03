@@ -32,7 +32,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Signing key
+        # Two repository secrets (Settings > Secrets and variables > Actions): the keystore as
+        # base64, and its password. Every build is then signed alike, so it installs as an update.
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/sideload.jks"
+            echo "SIGNING_KEYSTORE=$RUNNER_TEMP/sideload.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No SIGNING_KEYSTORE_BASE64 secret: signed with a throwaway debug key, so this APK won't install over an earlier one."
+          fi
       - name: Build APK
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: ./gradlew --no-daemon assembleRelease
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk Flashcards.apk

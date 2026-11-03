@@ -14,8 +14,25 @@ android {
         // Android 8.0: java.time and adaptive icons without workarounds; ~97% of phones.
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Every CI build gets a higher number (the run number), so Android accepts it as an update.
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = "0.1.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+    }
+
+    // One fixed key for every build: Android installs an update only over an app signed with the
+    // same key, and the default debug key is generated anew on each CI machine. The key is not in
+    // the repository: CI decodes it from the SIGNING_KEYSTORE_BASE64 secret (see the workflow).
+    // Without it, the build falls back to the debug key, and each build must be installed fresh.
+    val keystore = System.getenv("SIGNING_KEYSTORE")?.let(::file)?.takeIf { it.isFile }
+    signingConfigs {
+        if (keystore != null) {
+            create("sideload") {
+                storeFile = keystore
+                storePassword = System.getenv("SIGNING_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "flashcards"
+                keyPassword = System.getenv("SIGNING_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -23,9 +40,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so the release APK installs by sideloading;
-            // a Play Store release would use its own upload key instead.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("sideload") ?: signingConfigs.getByName("debug")
         }
     }
 
