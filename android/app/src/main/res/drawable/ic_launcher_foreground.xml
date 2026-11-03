@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ...with a white card over a tilted one. Drawn in the logo's 256-unit space, scaled into the icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.37" android:scaleY="0.37" android:translateX="6.64" android:translateY="6.64">
+        <group android:rotation="-14" android:pivotX="128" android:pivotY="128" android:translateX="10" android:translateY="-6">
+            <path android:fillColor="#FFFFFF" android:fillAlpha="0.55"
+                android:pathData="M66,76h124a14,14 0 0 1 14,14v84a14,14 0 0 1 -14,14h-124a14,14 0 0 1 -14,-14v-84a14,14 0 0 1 14,-14z" />
+        </group>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M66,76h124a14,14 0 0 1 14,14v84a14,14 0 0 1 -14,14h-124a14,14 0 0 1 -14,-14v-84a14,14 0 0 1 14,-14z" />
+        <path android:strokeColor="#0F766E" android:strokeWidth="16" android:strokeLineCap="round" android:pathData="M80,116L150,116" />
+        <path android:strokeColor="#0F766E" android:strokeWidth="10" android:strokeLineCap="round" android:pathData="M80,152L176,152" />
+    </group>
+</vector>

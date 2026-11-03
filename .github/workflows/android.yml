@@ -1,0 +1,44 @@
+# Builds the Android app (android/) and runs its unit tests on every push that
+# touches it. The installable APK is attached to the run as "flashcards-apk":
+# open the run under the repository's Actions tab and download it there.
+name: Android
+
+on:
+  push:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Build APK
+        run: ./gradlew --no-daemon assembleRelease
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk "Flashcards-$(git rev-parse --short HEAD).apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flashcards-apk
+          path: android/Flashcards-*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-reports
+          path: android/app/build/reports/

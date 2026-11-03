@@ -10,6 +10,12 @@ app drills German→English and English→Persian with no setting. See
 
 ![How Flashcards works: the desktop icon starts a local server and opens the page; the page's Start, Review and Summary screens talk to the server, which on Save writes the confidence and FSRS schedule into columns L to R of your workbook after a backup to ~/.flashcards; code updates come from GitHub with git pull and never touch your files](docs/architecture.svg)
 
+## On your phone
+
+An Android version lives in [`android/`](android/README.md): the same workbook, scheduling and
+exercises, offline, with pronunciation by the phone's text-to-speech engine. Its APK is built by
+GitHub Actions on every push (Actions tab → *Android* → artifact **flashcards-apk**).
+
 ## What it does
 
 | Screen | Purpose |
