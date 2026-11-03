@@ -14,7 +14,7 @@ app drills German→English and English→Persian with no setting. See
 
 An Android version lives in [`android/`](android/README.md): the same workbook, scheduling and
 exercises, offline, with pronunciation by the phone's text-to-speech engine. Its APK is built by
-GitHub Actions on every push (Actions tab → *Android* → artifact **flashcards-apk**).
+GitHub Actions on every push and published under **Releases** (newest: `Flashcards.apk`).
 
 ## What it does
 

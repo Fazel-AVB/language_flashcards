@@ -1,6 +1,8 @@
 # Builds the Android app (android/) and runs its unit tests on every push that
-# touches it. The installable APK is attached to the run as "flashcards-apk":
-# open the run under the repository's Actions tab and download it there.
+# touches it. Each pushed build is published as a GitHub Release with the APK
+# attached, so the newest one is always one tap away on a phone:
+#   https://github.com/Fazel-AVB/language_flashcards/releases/latest/download/Flashcards.apk
+# (Run artifacts download only as zips and are awkward on mobile.)
 name: Android
 
 on:
@@ -16,6 +18,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # to publish the release
     defaults:
       run:
         working-directory: android
@@ -31,12 +35,24 @@ jobs:
       - name: Build APK
         run: ./gradlew --no-daemon assembleRelease
       - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk "Flashcards-$(git rev-parse --short HEAD).apk"
+        run: cp app/build/outputs/apk/release/app-release.apk Flashcards.apk
       - uses: actions/upload-artifact@v4
         with:
           name: flashcards-apk
-          path: android/Flashcards-*.apk
+          path: android/Flashcards.apk
           if-no-files-found: error
+      - name: Publish as a release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Flashcards for Android (build ${{ github.run_number }})
+          body: |
+            Tap **Flashcards.apk** below to download, then open it to install.
+            Built from ${{ github.ref_name }} at ${{ github.sha }}.
+          files: android/Flashcards.apk
+          make_latest: true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

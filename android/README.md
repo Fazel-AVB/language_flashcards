@@ -9,10 +9,11 @@ the Python `fsrs` package.
 
 There is no Play Store listing; you install the APK file directly ("sideloading").
 
-1. On GitHub, open the repository's **Actions** tab → the latest **Android** run → under
-   *Artifacts*, download **flashcards-apk**. It is a zip with `Flashcards-<version>.apk` inside.
-2. Copy the APK to the phone, or download it there, and tap it. Android asks once to allow
-   installing apps from that source (your browser or file manager): allow it.
+1. On the phone, signed in to GitHub, open
+   https://github.com/Fazel-AVB/language_flashcards/releases/latest/download/Flashcards.apk
+   (or the repository's **Releases** page → newest *Flashcards for Android* → **Flashcards.apk**).
+2. Open the downloaded file. Android asks once to allow installing apps from that source (your
+   browser or file manager): allow it.
 3. To update, install a newer APK the same way. Your settings and an unsaved session are kept.
 
 Android 8.0 or newer. No permissions are requested.
