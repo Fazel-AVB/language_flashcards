@@ -98,7 +98,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(busy = true) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.load(uri) } }
-            result.onSuccess { lw ->
+            // Building the start screen is inside the catch too: a bug there must show a message, not crash the app.
+            result.mapCatching { lw ->
                 loaded = lw
                 if (resume) restoreSession(lw)
                 refreshSetup(lw)
@@ -116,7 +117,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (session != null) return flash("Finish or discard the current session before changing the workbook.", true)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { repo.load(uri) } }
-            result.onSuccess { lw ->
+            result.mapCatching { lw ->
                 prefs.workbookUri?.takeIf { it != uri }?.let(repo::forget)
                 repo.remember(uri)
                 prefs.workbookUri = uri
