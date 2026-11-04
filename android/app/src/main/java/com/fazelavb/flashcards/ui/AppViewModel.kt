@@ -8,6 +8,10 @@ import com.fazelavb.flashcards.core.Answer
 import com.fazelavb.flashcards.core.CardView
 import com.fazelavb.flashcards.core.DeckOptions
 import com.fazelavb.flashcards.core.Engine
+import com.fazelavb.flashcards.core.MemoryBreakdown
+import com.fazelavb.flashcards.core.Progress
+import com.fazelavb.flashcards.core.ProgressSummary
+import com.fazelavb.flashcards.core.SessionRecord
 import com.fazelavb.flashcards.core.Overview
 import com.fazelavb.flashcards.core.ReviewSession
 import com.fazelavb.flashcards.core.Scope
@@ -17,6 +21,7 @@ import com.fazelavb.flashcards.core.WorkbookException
 import com.fazelavb.flashcards.core.WritebackException
 import com.fazelavb.flashcards.data.LoadedWorkbook
 import com.fazelavb.flashcards.data.Prefs
+import com.fazelavb.flashcards.data.ProgressStore
 import com.fazelavb.flashcards.data.SessionStore
 import com.fazelavb.flashcards.data.ThemeChoice
 import com.fazelavb.flashcards.data.WorkbookRepository
@@ -27,6 +32,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.random.Random
 
 /*
@@ -37,7 +45,15 @@ import kotlin.random.Random
  * Stages, as in the web app: setup -> review -> summary -> saved.
  */
 
-enum class Stage { LOADING, SETUP, REVIEW, SUMMARY, SAVED }
+enum class Stage { LOADING, SETUP, REVIEW, SUMMARY, SAVED, PROGRESS }
+
+/** What the Progress screen shows; built on the phone from the workbook and the app's history. */
+data class ProgressView(
+    val breakdown: MemoryBreakdown?,
+    val history: List<SessionRecord>,
+    val daily: List<Pair<LocalDate, Double>>,
+    val summary: ProgressSummary,
+)
 
 data class SavedInfo(val words: Int, val cells: Int, val sheets: List<String>, val backup: String, val warning: String?)
 
@@ -60,12 +76,14 @@ data class UiState(
     val autoSpeak: Boolean = true,
     val onlineVoices: Boolean = false,
     val backups: Int = 0,
+    val progress: ProgressView? = null,
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = Prefs(app)
     private val repo = WorkbookRepository(app)
     private val store = SessionStore(app)
+    private val progressStore = ProgressStore(app)
     val speaker = Speaker(app).also { it.online = prefs.onlineVoices }
     private val engine = Engine()
 
@@ -139,7 +157,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 overview = engine.overview(lw.data, deck.threshold), deck = deck,
                 scope = runCatching { engine.scope(lw.data, deck) }.getOrNull(),
                 backups = repo.backupCount(),
-                stage = if (session != null) it.stage else if (it.stage == Stage.SAVED) Stage.SAVED else Stage.SETUP,
+                stage = if (session != null || it.stage == Stage.SAVED || it.stage == Stage.PROGRESS) it.stage else Stage.SETUP,
             )
         }
     }
@@ -202,6 +220,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun end() = act { it.end() }
 
     fun discard() {
+        // A discarded session still counts as practice time; it is marked as not saved.
+        session?.let { s -> Progress.record(s, Instant.now(), saved = false)?.let { runCatching { progressStore.add(it) } } }
         session = null
         store.save(null)
         _state.update { it.copy(card = null, summary = null, saved = null, stage = Stage.SETUP) }
@@ -223,6 +243,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             result.onSuccess { r ->
                 val info = SavedInfo(s.gradedIds.size, r.write.cellsWritten, r.write.sheetsTouched, r.backup.name, r.logWarning)
+                Progress.record(s, Instant.now(), saved = true)?.let { runCatching { progressStore.add(it) } }
                 session = null
                 store.save(null)
                 _state.update { it.copy(busy = false, stage = Stage.SAVED, saved = info, summary = null, card = null) }
@@ -252,6 +273,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 it.copy(stage = Stage.REVIEW, card = engine.cardView(s), revealed = keepReveal && it.revealed, summary = null)
             }
         }
+    }
+
+    // ------------------------------------------------------------------ progress
+
+    fun openProgress() {
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val history = progressStore.history()
+        val usage = progressStore.usage()
+        val view = ProgressView(
+            breakdown = loaded?.data?.let { Progress.breakdown(it.cards, it.topics, Instant.now()) },
+            history = history,
+            daily = Progress.dailyMinutes(usage, today, 14),
+            summary = Progress.summary(history, usage, today, zone),
+        )
+        _state.update { it.copy(stage = Stage.PROGRESS, progress = view) }
+    }
+
+    fun closeProgress() = _state.update { it.copy(stage = Stage.SETUP, progress = null) }
+
+    // Time the app is on screen, per day: started when it comes to the front, added when it leaves.
+    private var visibleSince: Long? = null
+
+    fun appVisible() {
+        visibleSince = System.currentTimeMillis()
+    }
+
+    fun appHidden() {
+        val since = visibleSince ?: return
+        visibleSince = null
+        val seconds = (System.currentTimeMillis() - since) / 1000
+        // An hour or more in one stretch is the screen left on, not study: count at most an hour.
+        runCatching { progressStore.addUsage(LocalDate.now(), seconds.coerceAtMost(3600)) }
     }
 
     // ------------------------------------------------------------------ settings

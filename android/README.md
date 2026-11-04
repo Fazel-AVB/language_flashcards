@@ -39,6 +39,23 @@ to the phone and choose the copy.
 An unfinished session survives the app being closed or stopped by Android in the background:
 it continues where you left it, as long as the workbook hasn't changed.
 
+## Progress
+
+The chart button on the start screen opens **Your progress**. It is all worked out on the phone:
+
+- **Where your words are**, from each word's FSRS schedule: *New* (never studied), *Learning*
+  (in the first minutes-long steps, or relearned after a lapse), *Short-term* (stability under
+  21 days) and *Long-term* (21 days or more: Anki's line for a "mature" card). Overall and per
+  topic, with the estimated chance of recalling a studied word right now.
+- **Practice sessions**: average grade and minutes per session over the last 10, 30 or all
+  sessions. Tap a point or bar for its details; *Show numbers* lists them.
+- **Time in the app**: per session, per day used, and the last 14 days.
+
+Session history (`history.json`) and time on screen (`usage.json`) are kept in the app's
+private storage. The app has no internet permission, so nothing can leave the phone. History
+starts with the version that added this screen. Discarded sessions count as practice time and are
+marked as not saved.
+
 ## Pronunciation
 
 The web app uses the browser's speech engine. On the phone that is Android's **text-to-speech**
