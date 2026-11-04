@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -88,9 +90,11 @@ private fun App(vm: AppViewModel, state: UiState) {
 
     // Back from another app (voices installed, workbook edited): re-read voices and the file.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        vm.appVisible()
         vm.speaker.refresh()
         if (state.stage == Stage.SETUP) vm.reload()
     }
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { vm.appHidden() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.speaker.stop() }
 
     LaunchedEffect(state.message) {
@@ -103,15 +107,26 @@ private fun App(vm: AppViewModel, state: UiState) {
     BackHandler(enabled = state.stage == Stage.REVIEW) { confirmEnd = true }
     BackHandler(enabled = state.stage == Stage.SUMMARY) { confirmDiscard = true }
     BackHandler(enabled = state.stage == Stage.SAVED) { vm.backToStart() }
+    BackHandler(enabled = state.stage == Stage.PROGRESS) { vm.closeProgress() }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     val pair = state.overview?.languages
-                    Text(if (pair != null) "${pair.term} Flashcards" else "Flashcards", maxLines = 1)
+                    Text(if (state.stage == Stage.PROGRESS) "Your progress" else if (pair != null) "${pair.term} Flashcards" else "Flashcards", maxLines = 1)
                 },
-                actions = { ThemeMenu(state.theme, vm::setTheme) },
+                navigationIcon = {
+                    if (state.stage == Stage.PROGRESS) IconButton(onClick = vm::closeProgress) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (state.stage == Stage.SETUP && state.hasWorkbook) IconButton(onClick = vm::openProgress) {
+                        Icon(ChartIcon, contentDescription = "Your progress")
+                    }
+                    ThemeMenu(state.theme, vm::setTheme)
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -146,6 +161,7 @@ private fun App(vm: AppViewModel, state: UiState) {
                             })
                         }
                         Stage.SAVED -> state.saved?.let { SavedScreen(it, onBack = vm::backToStart) }
+                        Stage.PROGRESS -> state.progress?.let { ProgressScreen(it) }
                     }
                 }
             }

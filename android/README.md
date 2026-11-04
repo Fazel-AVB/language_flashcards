@@ -14,7 +14,9 @@ There is no Play Store listing; you install the APK file directly ("sideloading"
    (or the repository's **Releases** page → newest *Flashcards for Android* → **Flashcards.apk**).
 2. Open the downloaded file. Android asks once to allow installing apps from that source (your
    browser or file manager): allow it.
-3. To update, install a newer APK the same way. Your settings and an unsaved session are kept.
+3. To update, install a newer APK the same way, over the installed app. Your settings and an
+   unsaved session are kept. (Builds before 0.1.6 were each signed with a different key and
+   cannot be updated over: uninstall such a one once.)
 
 Android 8.0 or newer. No permissions are requested.
 
@@ -36,6 +38,23 @@ to the phone and choose the copy.
 
 An unfinished session survives the app being closed or stopped by Android in the background:
 it continues where you left it, as long as the workbook hasn't changed.
+
+## Progress
+
+The chart button on the start screen opens **Your progress**. It is all worked out on the phone:
+
+- **Where your words are**, from each word's FSRS schedule: *New* (never studied), *Learning*
+  (in the first minutes-long steps, or relearned after a lapse), *Short-term* (stability under
+  21 days) and *Long-term* (21 days or more: Anki's line for a "mature" card). Overall and per
+  topic, with the estimated chance of recalling a studied word right now.
+- **Practice sessions**: average grade and minutes per session over the last 10, 30 or all
+  sessions. Tap a point or bar for its details; *Show numbers* lists them.
+- **Time in the app**: per session, per day used, and the last 14 days.
+
+Session history (`history.json`) and time on screen (`usage.json`) are kept in the app's
+private storage. The app has no internet permission, so nothing can leave the phone. History
+starts with the version that added this screen. Discarded sessions count as practice time and are
+marked as not saved.
 
 ## Pronunciation
 
@@ -75,8 +94,9 @@ then *Run*. Or on the command line, with the Android SDK installed:
 ./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk
 ```
 
-The release APK is signed with the debug key so it can be sideloaded. A Play Store release would
-need its own signing key.
+CI signs the release APK with the key in the repository secrets `SIGNING_KEYSTORE_BASE64` (the
+keystore file, base64) and `SIGNING_PASSWORD`, so every build installs over the previous one.
+Without them it falls back to a throwaway debug key, and each build must be installed fresh.
 
 ## Layout
 

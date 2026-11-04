@@ -87,6 +87,17 @@ val PaletteIcon: ImageVector by lazy {
     }.build()
 }
 
+/** Material's "bar chart", for the Progress button. */
+val ChartIcon: ImageVector by lazy {
+    ImageVector.Builder("chart", 24.dp, 24.dp, 24f, 24f).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(5f, 9.2f); horizontalLineToRelative(3f); verticalLineTo(19f); horizontalLineTo(5f); close()
+            moveTo(10.6f, 5f); horizontalLineToRelative(2.8f); verticalLineToRelative(14f); horizontalLineToRelative(-2.8f); close()
+            moveTo(16.2f, 13f); horizontalLineTo(19f); verticalLineToRelative(6f); horizontalLineToRelative(-2.8f); close()
+        }
+    }.build()
+}
+
 /** Right-to-left languages need an explicit direction, or punctuation lands at the wrong end. */
 fun TextStyle.dir(rtl: Boolean) = copy(textDirection = if (rtl) TextDirection.Rtl else TextDirection.Content)
 

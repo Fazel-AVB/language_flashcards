@@ -34,6 +34,9 @@ data class Extra(
     val err: Color, val errBg: Color,
     val warn: Color, val warnBg: Color,
     val newChip: Color,
+    // Memory stages New -> Learning -> Short-term -> Long-term: one teal, ordered from faint to
+    // strong (validated as an ordinal ramp against each theme's card surface).
+    val stages: List<Color>,
 )
 
 val LocalExtra = staticCompositionLocalOf { lightExtra }
@@ -57,6 +60,7 @@ private val lightExtra = Extra(
     grades = listOf(Color(0xFFDC2626), Color(0xFFEA580C), Color(0xFFCA8A04), Color(0xFF16A34A), Color(0xFF0F766E)),
     ok = Color(0xFF047857), okBg = Color(0xFFD1FAE5), err = Color(0xFFB91C1C), errBg = Color(0xFFFEE2E2),
     warn = Color(0xFF92400E), warnBg = Color(0xFFFEF3C7), newChip = Color(0xFFFCD34D),
+    stages = listOf(Color(0xFF6DBCAF), Color(0xFF3A9C8F), Color(0xFF16766A), Color(0xFF0B4E47)),
 )
 
 private val dark = darkColorScheme(
@@ -79,6 +83,7 @@ private val darkExtra = Extra(
     grades = listOf(Color(0xFFF87171), Color(0xFFFB923C), Color(0xFFFACC15), Color(0xFF4ADE80), Color(0xFF2DD4BF)),
     ok = Color(0xFF34D399), okBg = Color(0xFF0F3A2C), err = Color(0xFFF87171), errBg = Color(0xFF3B1517),
     warn = Color(0xFFFBBF24), warnBg = Color(0xFF3A2A0B), newChip = Color(0xFFB45309),
+    stages = listOf(Color(0xFF1E6F66), Color(0xFF2A9688), Color(0xFF4DC4B3), Color(0xFF99F0E2)),
 )
 
 // Dark brown on warm paper: less brightness, contrast and blue than Light.
@@ -101,6 +106,7 @@ private val sepiaExtra = Extra(
     grades = listOf(Color(0xFFB83A2E), Color(0xFFC2611F), Color(0xFFA07510), Color(0xFF4E7F2E), Color(0xFF2F6B63)),
     ok = Color(0xFF3F6B2E), okBg = Color(0xFFE3E6C6), err = Color(0xFF9B2C2C), errBg = Color(0xFFF2D8C8),
     warn = Color(0xFF7A4E0E), warnBg = Color(0xFFF3E2B8), newChip = Color(0xFFD9B45A),
+    stages = listOf(Color(0xFF6DBCAF), Color(0xFF3A9C8F), Color(0xFF16766A), Color(0xFF0B4E47)),
 )
 
 /** The headword and examples in a serif face: reads like a printed dictionary, calm next to the sans UI. */

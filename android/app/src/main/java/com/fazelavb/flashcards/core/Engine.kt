@@ -182,7 +182,7 @@ class Engine(
         val deck = build(data, opts, seed = seed, limit = opts.size)
         if (deck.isEmpty()) throw UserException("No words match these settings.")
         return ReviewSession.start(deck, data.cards, opts.direction, opts.repeat, seed, opts.exercise, canListen,
-            data.hash, Srs.makeScheduler(fuzz), zone)
+            data.hash, Srs.makeScheduler(fuzz), zone, now())
     }
 
     fun resume(data: WorkbookData, state: SessionState): ReviewSession? {

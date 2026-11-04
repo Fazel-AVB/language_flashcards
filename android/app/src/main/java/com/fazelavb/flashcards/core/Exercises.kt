@@ -257,8 +257,10 @@ object Exercises {
     private val GERMAN = mapOf('ä' to "ae", 'ö' to "oe", 'ü' to "ue", 'ß' to "ss")
     // Persian typed with Arabic code points (ي ك); the zero-width non-joiner is not a mistake to judge.
     private val PERSIAN = mapOf('ي' to "ی", 'ك' to "ک", '‌' to "")
-    private val SPACES = Regex("""(?U)\s+""")
-    private val EDGE_PUNCT = Regex("""(?U)^[\W_]+|[\W_]+$""")
+    // Explicit Unicode classes, no inline Unicode flags (U, u): Android's regex engine (ICU) rejects
+    // those, and plain \s and \w differ between it and the JVM the tests run on.
+    private val SPACES = Regex("""[\s\p{Z}]+""")
+    private val EDGE_PUNCT = Regex("""^[^\p{L}\p{N}\p{M}]+|[^\p{L}\p{N}\p{M}]+$""")
 
     /** Comparison form: NFC, case-folded, ä->ae, Persian letters unified, spaces collapsed, end punctuation dropped. */
     fun canon(text: String): String {
@@ -280,7 +282,7 @@ object Exercises {
      */
     private fun find(sentence: String, term: String): Pair<Int, Int>? {
         if (term.isEmpty() || sentence.isEmpty()) return null
-        val m = Regex("""(?iu)(?<![\p{L}\p{N}_])""" + Regex.escape(term)).find(sentence)
+        val m = Regex("""(?<![\p{L}\p{N}_])""" + Regex.escape(term), RegexOption.IGNORE_CASE).find(sentence)
         if (m != null) {
             var end = m.range.last + 1
             while (end < sentence.length && (sentence[end].isLetterOrDigit() || sentence[end] == '‌')) end++

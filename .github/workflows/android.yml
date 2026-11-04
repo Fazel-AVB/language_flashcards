@@ -32,7 +32,32 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Signing key
+        # Two repository secrets (Settings > Secrets and variables > Actions): the keystore as
+        # base64, and its password. Every build is then signed alike, so it installs as an update.
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            # Pasting the long secret (on a phone especially) can add spaces or line breaks: drop them.
+            printf '%s' "$KEYSTORE_BASE64" | tr -d ' \t\r\n' > "$RUNNER_TEMP/key.b64"
+            echo "Secret: $(wc -c < "$RUNNER_TEMP/key.b64") base64 characters (3520 expected)"
+            if ! base64 -d "$RUNNER_TEMP/key.b64" > "$RUNNER_TEMP/sideload.jks" 2>/dev/null; then
+              echo "::error::SIGNING_KEYSTORE_BASE64 is not valid base64: paste the whole key file content again."
+              exit 1
+            fi
+            if ! keytool -list -keystore "$RUNNER_TEMP/sideload.jks" -storepass "$SIGNING_PASSWORD" >/dev/null 2>&1; then
+              echo "::error::The keystore in SIGNING_KEYSTORE_BASE64 can't be opened with SIGNING_PASSWORD (incomplete key, or wrong password)."
+              exit 1
+            fi
+            echo "SIGNING_KEYSTORE=$RUNNER_TEMP/sideload.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No SIGNING_KEYSTORE_BASE64 secret: signed with a throwaway debug key, so this APK won't install over an earlier one."
+          fi
       - name: Build APK
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: ./gradlew --no-daemon assembleRelease
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk Flashcards.apk

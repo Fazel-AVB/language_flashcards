@@ -216,6 +216,8 @@ data class SessionState(
     val log: MutableList<ReviewEntry> = mutableListOf(),
     var turn: Int = 0,
     var result: CheckResult? = null,
+    /** When the session started (epoch millis), for the time-spent figures; 0 in sessions saved before it existed. */
+    val startedAtMillis: Long = 0,
 )
 
 /**
@@ -254,11 +256,12 @@ class ReviewSession(
             deck: List<Card>, pool: List<Card>, direction: Direction, repeat: Boolean, seed: Long,
             exercise: ExerciseChoice, canListen: Boolean, workbookHash: String,
             scheduler: FsrsScheduler = Srs.makeScheduler(), zone: ZoneId = ZoneId.systemDefault(),
+            startedAt: Instant = Instant.now(),
         ): ReviewSession {
             require(deck.isNotEmpty()) { "cannot start a session with no cards" }
             val ids = deck.map { it.id }
             val state = SessionState(ids, direction, repeat, seed, exercise, canListen, workbookHash,
-                firstPass = ids.toMutableList(), current = ids.first())
+                firstPass = ids.toMutableList(), current = ids.first(), startedAtMillis = startedAt.toEpochMilli())
             return ReviewSession(deck, pool, state, scheduler, zone)
         }
     }
